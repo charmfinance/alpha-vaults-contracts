@@ -38,9 +38,7 @@ contract SpreadPool is ERC20, Ownable, ReentrancyGuard {
     uint256 public rebalancePositionId;
 
 
-    constructor(address _token0, address _token1, uint24 _fee) public ERC20(
-        string(abi.encodePacked("spread ", ERC20(_token0).symbol(), ERC20(_token1).symbol())),
-        string(abi.encodePacked("sp", ERC20(_token0).symbol(), ERC20(_token1).symbol())),
+    constructor(string memory name, string memory symbol, address _token0, address _token1, uint24 _fee) public ERC20(name, symbol
     ) {
         token0 = IERC20(_token0);
         token1 = IERC20(_token1);
@@ -70,6 +68,8 @@ contract SpreadPool is ERC20, Ownable, ReentrancyGuard {
 
         amount0 = amount0.sub(amount0.mul(withdrawFee).div(1e6);
         amount1 = amount1.sub(amount1.mul(withdrawFee).div(1e6);
+        require(amount0 <= token0.balanceof(address(this)), "Not enough balance 0");
+        require(amount1 <= token1.balanceof(address(this)), "Not enough balance 1");
 
         burn(msg.sender, amount);
         token0.safeTransfer(msg.sender, amount0);
@@ -149,6 +149,14 @@ contract SpreadPool is ERC20, Ownable, ReentrancyGuard {
 
     function setWithdrawPaused(bool paused) external onlyOwner {
         withdrawPaused = paused;
+    }
+
+    /**
+     *
+     */
+    function liquidate(uint256 amount, address recipient) external nonReentrant onlyOwner {
+
+        // TODO decide if need this, see what yearn vaults do
     }
 
     /**

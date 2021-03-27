@@ -1,0 +1,13 @@
+{
+    "name": "charm-lt",
+    "devDependencies": {
+        "prettier-plugin-solidity": "^1.0.0-alpha.58",
+        "solhint-plugin-prettier": "0.0.5"
+    },
+    "scripts": {
+        "lint": "prettier --list-different **/*.sol",
+        "lint:check": "prettier --check **/*.sol",
+        "lint:fix": "prettier --write **/*.sol"
+    },
+    "dependencies": {}
+}
