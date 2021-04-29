@@ -1,13 +1,15 @@
 {
-    "name": "charm-lt",
-    "devDependencies": {
-        "prettier-plugin-solidity": "^1.0.0-alpha.58",
-        "solhint-plugin-prettier": "0.0.5"
-    },
-    "scripts": {
-        "lint": "prettier --list-different **/*.sol",
-        "lint:check": "prettier --check **/*.sol",
-        "lint:fix": "prettier --write **/*.sol"
-    },
-    "dependencies": {}
+  "name": "quant-protocol",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "lint": "prettier --list-different **/*.sol",
+    "lint:check": "prettier --check **/*.sol",
+    "lint:fix": "prettier --write **/*.sol"
+  },
+  "dependencies": {
+    "prettier": "^2.2.1",
+    "prettier-plugin-solidity": "^1.0.0-beta.10",
+    "solhint-plugin-prettier": "0.0.5"
+  }
 }
