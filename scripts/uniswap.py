@@ -36,7 +36,7 @@ CONTRACTS = {
     "nonfungibleTokenPositionDescriptorAddress": "0x3b1aC1c352F3A18A58471908982b8b870c836EC0",
     "descriptorProxyAddress": "0x539BF58f052dE91ae369dAd59f1ac6887dF39Bc5",
     "nonfungibleTokenPositionManagerAddress": "0xbBca0fFBFE60F60071630A8c80bb6253dC9D6023",
-    "v3MigratorAddress": "0xc4b81504F9a2bd6a6f2617091FB01Efb38D119c8"
+    "v3MigratorAddress": "0xc4b81504F9a2bd6a6f2617091FB01Efb38D119c8",
 }
 
 
@@ -66,7 +66,9 @@ def sqrt_to_price(sqrtratio):
 
 
 def _pool():
-    factory = UniswapV3Core.interface.IUniswapV3Factory(CONTRACTS["v3CoreFactoryAddress"])
+    factory = UniswapV3Core.interface.IUniswapV3Factory(
+        CONTRACTS["v3CoreFactoryAddress"]
+    )
     return UniswapV3Core.interface.IUniswapV3Pool(factory.getPool(ETH, USDC, FEE))
 
 
@@ -76,7 +78,9 @@ def create_pool():
     eth = deployer.deploy(MockToken, "ETH", "ETH", 18)
     usdc = deployer.deploy(MockToken, "USDC", "USDC", 8)
 
-    factory = UniswapV3Core.interface.IUniswapV3Factory(CONTRACTS["v3CoreFactoryAddress"])
+    factory = UniswapV3Core.interface.IUniswapV3Factory(
+        CONTRACTS["v3CoreFactoryAddress"]
+    )
     factory.createPool(eth, usdc, FEE, {"from": deployer})
 
     pool = UniswapV3Core.interface.IUniswapV3Pool(factory.getPool(eth, usdc, FEE))
@@ -95,8 +99,8 @@ def create_pool():
 def deploy_vault():
     deployer = accounts.load("deployer")
     vault = deployer.deploy(Vault, _pool(), 2400, 1200, 100)
-    MockToken.at(ETH).approve(vault, 1<<255, {"from": deployer})
-    MockToken.at(USDC).approve(vault, 1<<255, {"from": deployer})
+    MockToken.at(ETH).approve(vault, 1 << 255, {"from": deployer})
+    MockToken.at(USDC).approve(vault, 1 << 255, {"from": deployer})
 
     print(vault.passiveTickLower())
     print(vault.passiveTickUpper())
@@ -115,8 +119,8 @@ def deploy_vault():
 def deploy_router():
     deployer = accounts.load("deployer")
     router = deployer.deploy(Router, _pool())
-    MockToken.at(ETH).approve(router, 1<<255, {"from": deployer})
-    MockToken.at(USDC).approve(router, 1<<255, {"from": deployer})
+    MockToken.at(ETH).approve(router, 1 << 255, {"from": deployer})
+    MockToken.at(USDC).approve(router, 1 << 255, {"from": deployer})
 
     # lp over whole range
     _print_balances(deployer)
@@ -133,7 +137,9 @@ def rebalance():
 
     vault.rebalance({"from": deployer})
     print(f"Passive range:    {vault.passiveTickLower()}  {vault.passiveTickUpper()}")
-    print(f"Rebalance range:  {vault.rebalanceTickLower()}  {vault.rebalanceTickUpper()}")
+    print(
+        f"Rebalance range:  {vault.rebalanceTickLower()}  {vault.rebalanceTickUpper()}"
+    )
     _print_balances(vault)
 
 
@@ -172,7 +178,12 @@ def poolMint():
     router = Router.at(ROUTER)
 
     _print_balances(deployer)
-    router.mint(price_to_tick(1800e8 / 1e18), price_to_tick(2200e8 / 1e18), 1e20, {"from": deployer})
+    router.mint(
+        price_to_tick(1800e8 / 1e18),
+        price_to_tick(2200e8 / 1e18),
+        1e20,
+        {"from": deployer},
+    )
     _print_balances(deployer)
 
 
@@ -206,4 +217,3 @@ def _print_balances(account):
     print(f"ETH balance:   {balance}")
     balance = MockToken.at(USDC).balanceOf(account)
     print(f"USDC balance:  {balance}")
-

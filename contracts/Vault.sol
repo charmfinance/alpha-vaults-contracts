@@ -45,11 +45,9 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     int24 public baseThreshold;
     int24 public rebalanceThreshold;
-    uint256 public updateCooldown;
     uint32 public twapDuration;
-
-    address public governance;
-    address public pendingGovernance;
+    uint256 public updateCooldown;
+    uint256 public totalSupplyCap;
 
     struct Range {
         int24 tickLower;
@@ -59,14 +57,17 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     Range public baseRange;
     Range public rebalanceRange;
 
+    address public governance;
+    address public pendingGovernance;
     uint256 public lastUpdate;
 
     constructor(
         address _pool,
-        int24 _passiveWidth,
-        int24 _rebalanceWidth,
+        int24 _baseThreshold,
+        int24 _rebalanceThreshold,
+        uint32 _twapDuration,
         uint256 _updateCooldown,
-        uint32 _twapDuration
+        uint256 _totalSupplyCap
     ) ERC20("name", "symbol") {
         require(_pool != address(0));
         pool = IUniswapV3Pool(_pool);
@@ -76,15 +77,16 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         fee = pool.fee();
         tickSpacing = pool.tickSpacing();
 
-        baseThreshold = _passiveWidth;
-        rebalanceThreshold = _rebalanceWidth;
-        updateCooldown = _updateCooldown;
-        twapDuration = _twapDuration;
+        require(_baseThreshold % tickSpacing == 0, "baseThreshold");
+        require(_rebalanceThreshold % tickSpacing == 0, "rebalanceThreshold");
+        require(_baseThreshold > 0, "baseThreshold");
+        require(_rebalanceThreshold > 0, "rebalanceThreshold");
 
-        require(baseThreshold % tickSpacing == 0, "baseThreshold");
-        require(rebalanceThreshold % tickSpacing == 0, "rebalanceThreshold");
-        require(baseThreshold > 0, "baseThreshold");
-        require(rebalanceThreshold > 0, "rebalanceThreshold");
+        baseThreshold = _baseThreshold;
+        rebalanceThreshold = _rebalanceThreshold;
+        twapDuration = _twapDuration;
+        updateCooldown = _updateCooldown;
+        totalSupplyCap = _totalSupplyCap;
 
         governance = msg.sender;
 
@@ -142,6 +144,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         _mintLiquidity(rebalanceRange, rebalanceAmount, msg.sender);
 
         _mint(to, shares);
+        _checkTotalSupplyCap();
     }
 
     function _initialMint(
@@ -150,10 +153,17 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         address to
     ) internal returns (uint256 shares) {
         shares = _getLiquidityForAmounts(baseRange, maxAmount0, maxAmount1);
-        require(shares < type(uint128).max, "shares max");
+        require(shares < type(uint128).max, "shares");
 
         _mintLiquidity(baseRange, uint128(shares), msg.sender);
         _mint(to, shares);
+        _checkTotalSupplyCap();
+    }
+
+    function _checkTotalSupplyCap() internal {
+        if (totalSupplyCap > 0) {
+            require(totalSupply() <= totalSupplyCap, "totalSupplyCap");
+        }
     }
 
     function burn(uint256 shares, address to) external nonReentrant {
@@ -180,12 +190,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
         // Update base range and add liquidity
         baseRange = Range(tick - baseThreshold, tickPlusSpacing + baseThreshold);
-        uint128 baseAmount =
-            _getLiquidityForAmounts(
-                baseRange,
-                token0.balanceOf(address(this)),
-                token1.balanceOf(address(this))
-            );
+        uint128 baseAmount = _getMaxLiquidity(baseRange);
         _mintLiquidity(baseRange, baseAmount, address(this));
 
         // Update rebalance range
@@ -201,12 +206,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             baseRange.tickLower != rebalanceRange.tickLower ||
                 baseRange.tickUpper != rebalanceRange.tickUpper
         );
-        uint128 rebalanceAmount =
-            _getLiquidityForAmounts(
-                rebalanceRange,
-                token0.balanceOf(address(this)),
-                token1.balanceOf(address(this))
-            );
+        uint128 rebalanceAmount = _getMaxLiquidity(rebalanceRange);
         _mintLiquidity(rebalanceRange, rebalanceAmount, address(this));
     }
 
@@ -350,6 +350,12 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             );
     }
 
+    function _getMaxLiquidity(Range memory range) internal view returns (uint128) {
+        uint256 balance0 = token0.balanceOf(address(this));
+        uint256 balance1 = token1.balanceOf(address(this));
+        return _getLiquidityForAmounts(range, balance0, balance1);
+    }
+
     function _getLiquidityForAmounts(
         Range memory range,
         uint256 amount0,
@@ -398,6 +404,10 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
         twapDuration = _twapDuration;
+    }
+
+    function setTotalSupplyCap(uint256 _totalSupplyCap) external onlyGovernance {
+        totalSupplyCap = _totalSupplyCap;
     }
 
     /**

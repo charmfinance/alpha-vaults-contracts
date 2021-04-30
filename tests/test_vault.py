@@ -4,7 +4,7 @@ from pytest import approx
 
 
 def test_constructor(Vault, pool, gov):
-    vault = gov.deploy(Vault, pool, 2400, 1200, 12*60*60, 600)
+    vault = gov.deploy(Vault, pool, 2400, 1200, 600, 12 * 60 * 60, 100e18)
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
     assert vault.token1() == pool.token1()
@@ -13,8 +13,9 @@ def test_constructor(Vault, pool, gov):
 
     assert vault.baseThreshold() == 2400
     assert vault.rebalanceThreshold() == 1200
-    assert vault.updateCooldown() == 12*60*60
     assert vault.twapDuration() == 600
+    assert vault.updateCooldown() == 12 * 60 * 60
+    assert vault.totalSupplyCap() == 100e18
     assert vault.governance() == gov
 
     tick = pool.slot0()[1] // 60 * 60
@@ -28,20 +29,24 @@ def test_constructor(Vault, pool, gov):
 
 def test_constructor_checks(Vault, pool, gov):
     with reverts("baseThreshold"):
-        gov.deploy(Vault, pool, 2401, 1200, 23*60*60, 600)
+        gov.deploy(Vault, pool, 2401, 1200, 600, 23 * 60 * 60, 100e18)
 
     with reverts("rebalanceThreshold"):
-        gov.deploy(Vault, pool, 2400, 1201, 23*60*60, 600)
+        gov.deploy(Vault, pool, 2400, 1201, 600, 23 * 60 * 60, 100e18)
 
     with reverts("baseThreshold"):
-        gov.deploy(Vault, pool, 0, 1200, 23*60*60, 600)
+        gov.deploy(Vault, pool, 0, 1200, 600, 23 * 60 * 60, 100e18)
 
     with reverts("rebalanceThreshold"):
-        gov.deploy(Vault, pool, 2400, 0, 23*60*60, 600)
+        gov.deploy(Vault, pool, 2400, 0, 600, 23 * 60 * 60, 100e18)
 
 
-@pytest.mark.parametrize("maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]])
-def test_mint_initial(vault, pool, tokens, gov, user, recipient, maxAmount0, maxAmount1):
+@pytest.mark.parametrize(
+    "maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]]
+)
+def test_mint_initial(
+    vault, pool, tokens, gov, user, recipient, maxAmount0, maxAmount1
+):
 
     # Store balances
     balance0 = tokens[0].balanceOf(user)
@@ -66,8 +71,21 @@ def test_mint_initial(vault, pool, tokens, gov, user, recipient, maxAmount0, max
         assert dbalance1 == maxAmount1
 
 
-@pytest.mark.parametrize("maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]])
-def test_mint_existing(vault, pool, tokens, getPositions, router, gov, user, recipient, maxAmount0, maxAmount1):
+@pytest.mark.parametrize(
+    "maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]]
+)
+def test_mint_existing(
+    vault,
+    pool,
+    tokens,
+    getPositions,
+    router,
+    gov,
+    user,
+    recipient,
+    maxAmount0,
+    maxAmount1,
+):
 
     # Mint and update to simulate existing activity
     vault.mint(1e17, 1e19, gov, {"from": gov})
@@ -117,7 +135,7 @@ def test_burn(vault, pool, tokens, router, getPositions, gov, user, recipient):
     vault.update({"from": gov})
 
     # Fast-forward 24 hours to avoid cooldown
-    chain.sleep(24*60*60)
+    chain.sleep(24 * 60 * 60)
 
     # Mint and update
     tx = vault.mint(1e6, 1e8, user, {"from": user})
@@ -144,10 +162,12 @@ def test_burn(vault, pool, tokens, router, getPositions, gov, user, recipient):
     assert tokens[1].balanceOf(recipient) > balance1
 
 
-def test_rebalance_when_empty_then_mint(vault, pool, tokens, getPositions, gov, user, recipient):
+def test_rebalance_when_empty_then_mint(
+    vault, pool, tokens, getPositions, gov, user, recipient
+):
 
     # Fast-forward 24 hours to avoid cooldown
-    chain.sleep(24*60*60)
+    chain.sleep(24 * 60 * 60)
 
     # Update
     vault.update({"from": gov})
@@ -212,12 +232,12 @@ def test_update_cooldown(vault, gov):
     vault.update({"from": gov})
 
     # After 22 hours, cannot update yet
-    chain.sleep(22*60*60)
+    chain.sleep(22 * 60 * 60)
     with reverts("cooldown"):
         vault.update({"from": gov})
 
     # After another 2 hours, update works
-    chain.sleep(2*60*60)
+    chain.sleep(2 * 60 * 60)
     vault.update({"from": gov})
 
 
@@ -241,14 +261,19 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.rebalanceThreshold() == 600
 
     with reverts("!governance"):
-        vault.setUpdateCooldown(12*60*60, {"from": user})
-    vault.setUpdateCooldown(12*60*60, {"from": gov})
-    assert vault.updateCooldown() == 12*60*60
-
-    with reverts("!governance"):
         vault.setTwapDuration(800, {"from": user})
     vault.setTwapDuration(800, {"from": gov})
     assert vault.twapDuration() == 800
+
+    with reverts("!governance"):
+        vault.setUpdateCooldown(12 * 60 * 60, {"from": user})
+    vault.setUpdateCooldown(12 * 60 * 60, {"from": gov})
+    assert vault.updateCooldown() == 12 * 60 * 60
+
+    with reverts("!governance"):
+        vault.setTotalSupplyCap(0, {"from": user})
+    vault.setTotalSupplyCap(0, {"from": gov})
+    assert vault.totalSupplyCap() == 0
 
     with reverts("!governance"):
         vault.setGovernance(recipient, {"from": user})
@@ -258,6 +283,3 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
         vault.acceptGovernance({"from": user})
     vault.acceptGovernance({"from": recipient})
     assert vault.governance() == recipient
-
-
-

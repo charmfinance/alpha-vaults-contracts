@@ -61,11 +61,7 @@ def pool(MockToken, router, pm, gov, users):
 
     # add some liquidity over whole range
     max_tick = 887272 // 60 * 60
-    router.mint(
-        pool,
-        -max_tick,
-        max_tick,
-        1e16, {"from": gov})
+    router.mint(pool, -max_tick, max_tick, 1e16, {"from": gov})
     yield pool
 
 
@@ -76,12 +72,12 @@ def tokens(MockToken, pool):
 
 @pytest.fixture
 def vault(Vault, pool, router, tokens, gov, users):
-    vault = gov.deploy(Vault, pool, 2400, 1200, 23*60*60, 600)
+    vault = gov.deploy(Vault, pool, 2400, 1200, 600, 23 * 60 * 60, 100e18)
 
     for u in users:
         tokens[0].approve(vault, 100e18, {"from": u})
         tokens[1].approve(vault, 10000e18, {"from": u})
-    
+
     yield vault
 
 
@@ -93,6 +89,7 @@ def getPositions(pool, helper):
         bkey = helper.computePositionKey(vault, b0, b1)
         rkey = helper.computePositionKey(vault, r0, r1)
         return pool.positions(bkey), pool.positions(rkey)
+
     yield f
 
 
@@ -107,4 +104,5 @@ def debug(pool, tokens, helper):
         print(f"Rebalance position:  {pool.positions(rkey)}")
         print(f"Spare balance 0:  {tokens[0].balanceOf(vault)}")
         print(f"Spare balance 1:  {tokens[1].balanceOf(vault)}")
+
     yield f
