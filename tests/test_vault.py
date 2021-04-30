@@ -18,8 +18,8 @@ def test_constructor(Vault, pool, gov):
     assert vault.governance() == gov
 
     tick = pool.slot0()[1] // 60 * 60
-    assert vault.baseRange() == (tick - 2400, tick + 2460, True)
-    assert vault.rebalanceRange() == (0, 0, False)
+    assert vault.baseRange() == (tick - 2400, tick + 2460)
+    assert vault.rebalanceRange() == (0, 0)
 
     assert vault.name() == "name"
     assert vault.symbol() == "symbol"
@@ -40,32 +40,38 @@ def test_constructor_checks(Vault, pool, gov):
         gov.deploy(Vault, pool, 2400, 0, 23*60*60, 600)
 
 
-def test_mint_new_vault(vault, pool, tokens, getPositions, gov, user, recipient):
+@pytest.mark.parametrize("amount0,amount1,zeroTight", [[1e7, 1e10, True], [1e9, 1e10, False]])
+def test_mint_initial(vault, pool, tokens, gov, user, recipient, amount0, amount1, zeroTight):
 
     # Store balances
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
 
-    # Mint 1e8 shares
-    vault.mint(1e8, recipient, {"from": user})
-    assert vault.balanceOf(recipient) == 1e8
+    # Mint
+    tx = vault.mint(amount0, amount1, recipient, {"from": user})
+    shares = tx.return_value
 
-    # Check liquidity in pool
-    base, rebalance = getPositions(vault)
-    assert base[0] == 1e8
-    assert rebalance[0] == 0
+    # Check shares
+    assert shares == vault.balanceOf(recipient) > 0
 
-    # Check user has spent tokens
-    assert tokens[0].balanceOf(user) < balance0
-    assert tokens[1].balanceOf(user) < balance1
+    # Check spent right amount
+    dbalance0 = balance0 - tokens[0].balanceOf(user)
+    dbalance1 = balance1 - tokens[1].balanceOf(user)
+    if zeroTight:
+        assert dbalance0 == amount0
+        assert dbalance1 < amount1
+    else:
+        assert dbalance0 < amount0
+        assert dbalance1 == amount1
 
 
-def test_mint_updated_vault(vault, pool, tokens, router, getPositions, gov, user, recipient):
+@pytest.mark.parametrize("amount0,amount1,zeroTight", [[1e7, 1e10, True], [1e9, 1e10, False]])
+def test_mint_existing(vault, pool, tokens, getPositions, router, gov, user, recipient, amount0, amount1, zeroTight):
 
     # Mint and update to simulate existing activity
-    vault.mint(1e18, gov, {"from": gov})
+    vault.mint(1e17, 1e19, gov, {"from": gov})
     router.swap(pool, True, 1e16, {"from": gov})
-    vault.update()
+    vault.update({"from": gov})
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(user)
@@ -74,34 +80,45 @@ def test_mint_updated_vault(vault, pool, tokens, router, getPositions, gov, user
     base0, rebalance0 = getPositions(vault)
 
     # Mint
-    shares = 1e17
-    vault.mint(shares, recipient, {"from": user})
-    assert vault.balanceOf(recipient) == shares
+    tx = vault.mint(amount0, amount1, recipient, {"from": user})
+    shares = tx.return_value
 
-    # Check liquidity in pool
+    # Check shares
+    assert shares == vault.balanceOf(recipient) > 0
+
+    # Check spent right amount
+    dbalance0 = balance0 - tokens[0].balanceOf(user)
+    dbalance1 = balance1 - tokens[1].balanceOf(user)
+    if zeroTight:
+        assert approx(dbalance0) == amount0 * 0.9999
+        assert dbalance0 < amount0
+        assert dbalance1 < amount1
+    else:
+        assert approx(dbalance1) == amount1 * 0.9999
+        assert dbalance0 < amount0
+        assert dbalance1 < amount1
+
+    # Check liquidity and balances are in proportion
     base1, rebalance1 = getPositions(vault)
-    assert (totalSupply + shares) / totalSupply == base1[0] / base0[0]
-    assert (totalSupply + shares) / totalSupply == rebalance1[0] / rebalance0[0]
-
-    # Check user has spent tokens
-    assert tokens[0].balanceOf(user) < balance0
-    assert tokens[1].balanceOf(user) < balance1
+    ratio = (totalSupply + shares) / totalSupply
+    assert approx(base1[0] / base0[0]) == ratio
+    assert approx(rebalance1[0] / rebalance0[0]) == ratio
 
 
 def test_burn(vault, pool, tokens, router, getPositions, gov, user, recipient):
 
     # Mint and update to simulate existing activity
-    vault.mint(1e18, gov, {"from": gov})
+    vault.mint(1e17, 1e19, gov, {"from": gov})
     router.swap(pool, True, 1e16, {"from": gov})
-    vault.update()
+    vault.update({"from": gov})
 
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24*60*60)
 
     # Mint and update
-    shares = 1e17
-    vault.mint(shares, user, {"from": user})
-    vault.update()
+    tx = vault.mint(1e6, 1e8, user, {"from": user})
+    shares = tx.return_value
+    vault.update({"from": gov})
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(recipient)
@@ -115,8 +132,8 @@ def test_burn(vault, pool, tokens, router, getPositions, gov, user, recipient):
 
     # Check liquidity in pool
     base1, rebalance1 = getPositions(vault)
-    assert (totalSupply - shares) / totalSupply == base1[0] / base0[0]
-    assert (totalSupply - shares) / totalSupply == rebalance1[0] / rebalance0[0]
+    assert approx((totalSupply - shares) / totalSupply) == base1[0] / base0[0]
+    assert approx((totalSupply - shares) / totalSupply) == rebalance1[0] / rebalance0[0]
 
     # Check recipient has received tokens
     assert tokens[0].balanceOf(recipient) > balance0
@@ -129,10 +146,10 @@ def test_rebalance_when_empty_then_mint(vault, pool, tokens, getPositions, gov, 
     chain.sleep(24*60*60)
 
     # Update
-    vault.update()
+    vault.update({"from": gov})
 
-    shares = 1e17
-    vault.mint(shares, user, {"from": user})
+    tx = vault.mint(1e6, 1e8, user, {"from": user})
+    shares = tx.return_value
 
     # Check liquidity in pool
     base, rebalance = getPositions(vault)
@@ -143,12 +160,13 @@ def test_rebalance_when_empty_then_mint(vault, pool, tokens, getPositions, gov, 
 def test_balances_when_empty():
     1
 
+
 @pytest.mark.parametrize("buy", [False, True])
 @pytest.mark.parametrize("big", [False, True])
 def test_update(vault, pool, tokens, router, getPositions, gov, user, buy, big):
 
     # Mint some liquidity
-    vault.mint(1e18, gov, {"from": gov})
+    vault.mint(1e17, 1e19, gov, {"from": gov})
 
     # Do a swap to move the price
     prevTick = pool.slot0()[1] // 60 * 60
@@ -160,16 +178,16 @@ def test_update(vault, pool, tokens, router, getPositions, gov, user, buy, big):
     assert tick != prevTick
 
     # Rebalance
-    vault.update()
+    vault.update({"from": gov})
     tick2 = pool.slot0()[1] // 60 * 60
     assert tick == tick2
 
     # Check ranges are set correctly
-    assert vault.baseRange() == (tick - 2400, tick + 60 + 2400, True)
+    assert vault.baseRange() == (tick - 2400, tick + 60 + 2400)
     if buy:
-        assert vault.rebalanceRange() == (tick + 60, tick + 60 + 1200, True)
+        assert vault.rebalanceRange() == (tick + 60, tick + 60 + 1200)
     else:
-        assert vault.rebalanceRange() == (tick - 1200, tick, True)
+        assert vault.rebalanceRange() == (tick - 1200, tick)
 
     base, rebalance = getPositions(vault)
 

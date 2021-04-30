@@ -20,6 +20,14 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 // TODO: chagne contract name to PassiveRebalancingVault
 // TODO: extend interface
 // TODO: choose name and symbol
+// TODO: cap
+// TODO: multicall
+// TODO: events
+// TODO: protocol fee, charged in update()
+// TODO: test getBalances
+// TODO: floorTick -> current range (return Range)
+// TODO: fuzzing
+
 
 /**
  * @title   Vault
@@ -43,16 +51,9 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     address public governance;
     address public pendingGovernance;
 
-    int24 public baseTickLower;
-    int24 public baseTickUpper;
-    int24 public rebalanceTickLower;
-    int24 public rebalanceTickUpper;
-    bool public shouldRebalance;
-
     struct Range {
         int24 tickLower;
         int24 tickUpper;
-        bool isActive;
     }
 
     Range public baseRange;
@@ -88,18 +89,50 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         governance = msg.sender;
 
         int24 tick = _floorTick();
-        baseRange.tickLower = tick - baseThreshold;
-        baseRange.tickUpper = tick + tickSpacing + baseThreshold;
-        baseRange.isActive = true;
+        baseRange = Range(tick - baseThreshold, tick + tickSpacing + baseThreshold);
     }
 
-    // TODO: handle slippage
-    function mint(uint256 shares, address to) external nonReentrant {
-        require(shares > 0, "shares");
+    function mint(
+        uint256 maxAmount0,
+        uint256 maxAmount1,
+        address to
+    ) external returns (uint256 shares) {
         require(to != address(0), "to");
 
-        _mintLiquidity(baseRange, shares, msg.sender);
-        _mintLiquidity(rebalanceRange, shares, msg.sender);
+        uint256 totalSupply = totalSupply();
+        if (totalSupply == 0) {
+            return _initialMint(maxAmount0, maxAmount1, to);
+        }
+
+        (uint256 balance0, uint256 balance1) = getBalances();
+        assert(balance0 > 0 || balance1 > 0);
+
+        uint256 shares0 =
+            balance0 > 0 ? maxAmount0.mul(totalSupply).div(balance0) : type(uint256).max;
+        uint256 shares1 =
+            balance1 > 0 ? maxAmount1.mul(totalSupply).div(balance1) : type(uint256).max;
+        shares = shares0 < shares1 ? shares0 : shares1;
+
+        // Decrease slightly so amounts don't exceed max
+        shares = shares.mul(9999).div(10000);
+        require(shares > 0, "shares");
+
+        uint128 baseAmount = _getProportionalLiquidity(baseRange, shares);
+        uint128 rebalanceAmount = _getProportionalLiquidity(rebalanceRange, shares);
+        _mintLiquidity(baseRange, baseAmount, msg.sender);
+        _mintLiquidity(rebalanceRange, rebalanceAmount, msg.sender);
+
+        _mint(to, shares);
+    }
+
+    function _initialMint(
+        uint256 maxAmount0,
+        uint256 maxAmount1,
+        address to
+    ) internal returns (uint256 shares) {
+        shares = _getLiquidityForAmounts(baseRange, maxAmount0, maxAmount1);
+        require(shares < type(uint128).max, "shares max");
+        _mintLiquidity(baseRange, uint128(shares), msg.sender);
         _mint(to, shares);
     }
 
@@ -117,75 +150,43 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         lastUpdate = block.timestamp;
 
         int24 tick = _floorTick();
+        int24 tickPlusSpacing = tick + tickSpacing;
         // TODO: check twap matches
 
         // Remove all liquidity
-        _burnLiquidity(baseRange, totalSupply(), address(this), true);
-        _burnLiquidity(rebalanceRange, totalSupply(), address(this), true);
+        uint256 totalSupply = totalSupply();
+        if (totalSupply > 0) {
+            _burnLiquidity(baseRange, totalSupply, address(this), true);
+            _burnLiquidity(rebalanceRange, totalSupply, address(this), true);
+        }
 
-        // Update passive range and add liquidity
-        baseRange.tickLower = tick - baseThreshold;
-        baseRange.tickUpper = tick + tickSpacing + baseThreshold;
-        _mintMaxLiquidity(baseRange, address(this));
+        // Update base range and add liquidity
+        baseRange = Range(tick - baseThreshold, tickPlusSpacing + baseThreshold);
+        uint128 baseAmount = _getLiquidityForAmounts(baseRange, token0.balanceOf(address(this)), token1.balanceOf(address(this)));
+        _mintLiquidity(baseRange, baseAmount, address(this));
 
         // Update rebalance range
         if (token0.balanceOf(address(this)) > 0) {
-            rebalanceRange = Range(
-                tick + tickSpacing,
-                tick + tickSpacing + rebalanceThreshold,
-                true
-            );
-        } else if (token1.balanceOf(address(this)) > 0) {
-            rebalanceRange = Range(tick - rebalanceThreshold, tick, true);
+            rebalanceRange = Range(tickPlusSpacing, tickPlusSpacing + rebalanceThreshold);
         } else {
-            rebalanceRange = Range(0, 0, false);
+            rebalanceRange = Range(tick - rebalanceThreshold, tick);
         }
 
-        // Check passive and rebalance ranges aren't the same, otherwise
+        // Check base and rebalance ranges aren't the same, otherwise
         // calculations would fail elsewhere
         assert(
             baseRange.tickLower != rebalanceRange.tickLower ||
                 baseRange.tickUpper != rebalanceRange.tickUpper
         );
-        _mintMaxLiquidity(rebalanceRange, address(this));
+        uint128 rebalanceAmount = _getLiquidityForAmounts(rebalanceRange, token0.balanceOf(address(this)), token1.balanceOf(address(this)));
+        _mintLiquidity(rebalanceRange, rebalanceAmount, address(this));
     }
 
     function _mintLiquidity(
         Range memory range,
-        uint256 shares,
+        uint128 amount,
         address payer
     ) internal {
-        if (!range.isActive) {
-            return;
-        }
-
-        uint128 amount = _getProportionalLiquidity(range, shares);
-        if (amount == 0) {
-            return;
-        }
-
-        pool.mint(
-            address(this),
-            range.tickLower,
-            range.tickUpper,
-            amount,
-            abi.encode(payer)
-        );
-    }
-
-    function _mintMaxLiquidity(Range memory range, address payer) internal {
-        if (!range.isActive) {
-            return;
-        }
-
-        uint128 amount =
-            LiquidityAmounts.getLiquidityForAmounts(
-                _sqrtRatioX96(),
-                TickMath.getSqrtRatioAtTick(range.tickLower),
-                TickMath.getSqrtRatioAtTick(range.tickUpper),
-                token0.balanceOf(payer),
-                token1.balanceOf(payer)
-            );
         if (amount == 0) {
             return;
         }
@@ -205,7 +206,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         address to,
         bool collectAll
     ) internal {
-        if (!range.isActive) {
+        if (shares == 0) {
             return;
         }
 
@@ -230,15 +231,9 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         view
         returns (uint128)
     {
-        uint256 totalSupply = totalSupply();
-        if (totalSupply == 0) {
-            require(shares <= type(uint128).max);
-            return uint128(shares);
-        }
-
         // TODO check overflow
         uint128 amount = _getDepositedLiquidity(range);
-        return uint128(uint256(amount).mul(shares).div(totalSupply));
+        return uint128(uint256(amount).mul(shares).div(totalSupply()));
     }
 
     function _getDepositedLiquidity(Range memory range)
@@ -295,7 +290,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         }
     }
 
-    function getBalances() external view returns (uint256 balance0, uint256 balance1) {
+    function getBalances() public view returns (uint256 balance0, uint256 balance1) {
         balance0 = token0.balanceOf(address(this));
         balance1 = token1.balanceOf(address(this));
 
@@ -306,9 +301,6 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     }
 
     function getPassiveAmounts() public view returns (uint256, uint256) {
-        if (!baseRange.isActive) {
-            return (0, 0);
-        }
         uint128 amount = _getDepositedLiquidity(baseRange);
         return
             LiquidityAmounts.getAmountsForLiquidity(
@@ -320,9 +312,6 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     }
 
     function getRebalanceAmounts() public view returns (uint256, uint256) {
-        if (!rebalanceRange.isActive) {
-            return (0, 0);
-        }
         uint128 amount = _getDepositedLiquidity(rebalanceRange);
         return
             LiquidityAmounts.getAmountsForLiquidity(
@@ -330,6 +319,21 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
                 TickMath.getSqrtRatioAtTick(rebalanceRange.tickLower),
                 TickMath.getSqrtRatioAtTick(rebalanceRange.tickUpper),
                 amount
+            );
+    }
+
+    function _getLiquidityForAmounts(
+        Range memory range,
+        uint256 amount0,
+        uint256 amount1
+    ) internal view returns (uint128) {
+        return
+            LiquidityAmounts.getLiquidityForAmounts(
+                _sqrtRatioX96(),
+                TickMath.getSqrtRatioAtTick(range.tickLower),
+                TickMath.getSqrtRatioAtTick(range.tickUpper),
+                amount0,
+                amount1
             );
     }
 

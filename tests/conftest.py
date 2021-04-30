@@ -88,8 +88,8 @@ def vault(Vault, pool, router, tokens, gov, users):
 @pytest.fixture
 def getPositions(pool, helper):
     def f(vault):
-        (b0, b1, _) = vault.baseRange()
-        (r0, r1, _) = vault.rebalanceRange()
+        (b0, b1) = vault.baseRange()
+        (r0, r1) = vault.rebalanceRange()
         bkey = helper.computePositionKey(vault, b0, b1)
         rkey = helper.computePositionKey(vault, r0, r1)
         return pool.positions(bkey), pool.positions(rkey)
@@ -99,8 +99,8 @@ def getPositions(pool, helper):
 @pytest.fixture
 def debug(pool, tokens, helper):
     def f(vault):
-        (b0, b1, _) = vault.baseRange()
-        (r0, r1, _) = vault.rebalanceRange()
+        (b0, b1) = vault.baseRange()
+        (r0, r1) = vault.rebalanceRange()
         bkey = helper.computePositionKey(vault, b0, b1)
         rkey = helper.computePositionKey(vault, r0, r1)
         print(f"Passive position:    {pool.positions(bkey)}")
