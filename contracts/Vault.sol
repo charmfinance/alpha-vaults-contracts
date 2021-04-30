@@ -27,6 +27,7 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 // TODO: test getBalances
 // TODO: floorTick -> current range (return Range)
 // TODO: fuzzing
+// TODO: only updater
 
 /**
  * @title   Vault
@@ -92,6 +93,23 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         baseRange = Range(tick - baseThreshold, tickPlusSpacing + baseThreshold);
     }
 
+    // function mint2(
+    //     uint256 maxAmount0,
+    //     uint256 maxAmount1,
+    //     address to
+    // ) external returns (uint256 shares) {
+    //     require(to != address(0), "to");
+    //     uint256 product0 = maxAmount0.mul(balance1);
+    //     uint256 product1 = maxAmount1.mul(balance0);
+    //     uint256 amount0 = product0 < product1 ? maxAmount0 : product1.div(balance1);
+    //     uint256 amount1 = product1 < product0 ? maxAmount1 : product0.div(balance0);
+    //     TransferHelper.safeTransferFrom(address(token0), msg.sender, address(this), amount0);
+    //     TransferHelper.safeTransferFrom(address(token1), msg.sender, address(this), amount1);
+
+    //     shares = product0 < product1 ? totalSupply().mul(amount0).div(balance0) : totalSupply().mul(amount1).div(balance1);
+    //     _mint(shares);
+    // }
+
     function mint(
         uint256 maxAmount0,
         uint256 maxAmount1,
@@ -104,6 +122,10 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             return _initialMint(maxAmount0, maxAmount1, to);
         }
 
+        // Decrease slightly so amounts don't exceed max
+        maxAmount0 = maxAmount0.sub(2);
+        maxAmount1 = maxAmount1.sub(2);
+
         (uint256 balance0, uint256 balance1) = getBalances();
         assert(balance0 > 0 || balance1 > 0);
 
@@ -112,9 +134,6 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint256 shares1 =
             balance1 > 0 ? maxAmount1.mul(totalSupply).div(balance1) : type(uint256).max;
         shares = shares0 < shares1 ? shares0 : shares1;
-
-        // Decrease slightly so amounts don't exceed max
-        shares = shares.mul(9999).div(10000);
         require(shares > 0, "shares");
 
         uint128 baseAmount = _getProportionalLiquidity(baseRange, shares);

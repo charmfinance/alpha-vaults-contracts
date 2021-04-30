@@ -40,15 +40,15 @@ def test_constructor_checks(Vault, pool, gov):
         gov.deploy(Vault, pool, 2400, 0, 23*60*60, 600)
 
 
-@pytest.mark.parametrize("amount0,amount1,zeroTight", [[1e7, 1e10, True], [1e9, 1e10, False]])
-def test_mint_initial(vault, pool, tokens, gov, user, recipient, amount0, amount1, zeroTight):
+@pytest.mark.parametrize("maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]])
+def test_mint_initial(vault, pool, tokens, gov, user, recipient, maxAmount0, maxAmount1):
 
     # Store balances
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
 
     # Mint
-    tx = vault.mint(amount0, amount1, recipient, {"from": user})
+    tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
     shares = tx.return_value
 
     # Check shares
@@ -57,16 +57,17 @@ def test_mint_initial(vault, pool, tokens, gov, user, recipient, amount0, amount
     # Check spent right amount
     dbalance0 = balance0 - tokens[0].balanceOf(user)
     dbalance1 = balance1 - tokens[1].balanceOf(user)
+    zeroTight = dbalance0 / maxAmount0 > dbalance1 / maxAmount1
     if zeroTight:
-        assert dbalance0 == amount0
-        assert dbalance1 < amount1
+        assert dbalance0 == maxAmount0
+        assert dbalance1 < maxAmount1
     else:
-        assert dbalance0 < amount0
-        assert dbalance1 == amount1
+        assert dbalance0 < maxAmount0
+        assert dbalance1 == maxAmount1
 
 
-@pytest.mark.parametrize("amount0,amount1,zeroTight", [[1e7, 1e10, True], [1e9, 1e10, False]])
-def test_mint_existing(vault, pool, tokens, getPositions, router, gov, user, recipient, amount0, amount1, zeroTight):
+@pytest.mark.parametrize("maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]])
+def test_mint_existing(vault, pool, tokens, getPositions, router, gov, user, recipient, maxAmount0, maxAmount1):
 
     # Mint and update to simulate existing activity
     vault.mint(1e17, 1e19, gov, {"from": gov})
@@ -80,7 +81,7 @@ def test_mint_existing(vault, pool, tokens, getPositions, router, gov, user, rec
     base0, rebalance0 = getPositions(vault)
 
     # Mint
-    tx = vault.mint(amount0, amount1, recipient, {"from": user})
+    tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
     shares = tx.return_value
 
     # Check shares
@@ -89,14 +90,17 @@ def test_mint_existing(vault, pool, tokens, getPositions, router, gov, user, rec
     # Check spent right amount
     dbalance0 = balance0 - tokens[0].balanceOf(user)
     dbalance1 = balance1 - tokens[1].balanceOf(user)
+    zeroTight = dbalance0 / maxAmount0 > dbalance1 / maxAmount1
     if zeroTight:
-        assert approx(dbalance0) == amount0 * 0.9999
-        assert dbalance0 < amount0
-        assert dbalance1 < amount1
+        # Max amount 0 is the tight constraint
+        assert approx(dbalance0, abs=3) == maxAmount0
+        assert dbalance0 <= maxAmount0
+        assert dbalance1 <= maxAmount1
     else:
-        assert approx(dbalance1) == amount1 * 0.9999
-        assert dbalance0 < amount0
-        assert dbalance1 < amount1
+        # Max amount 1 is the tight constraint
+        assert approx(dbalance1, abs=3) == maxAmount1
+        assert dbalance0 <= maxAmount0
+        assert dbalance1 <= maxAmount1
 
     # Check liquidity and balances are in proportion
     base1, rebalance1 = getPositions(vault)
