@@ -28,7 +28,6 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 // TODO: floorTick -> current range (return Range)
 // TODO: fuzzing
 
-
 /**
  * @title   Vault
  */
@@ -89,7 +88,8 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         governance = msg.sender;
 
         int24 tick = _floorTick();
-        baseRange = Range(tick - baseThreshold, tick + tickSpacing + baseThreshold);
+        int24 tickPlusSpacing = tick + tickSpacing;
+        baseRange = Range(tick - baseThreshold, tickPlusSpacing + baseThreshold);
     }
 
     function mint(
@@ -132,6 +132,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     ) internal returns (uint256 shares) {
         shares = _getLiquidityForAmounts(baseRange, maxAmount0, maxAmount1);
         require(shares < type(uint128).max, "shares max");
+
         _mintLiquidity(baseRange, uint128(shares), msg.sender);
         _mint(to, shares);
     }
@@ -155,14 +156,17 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
         // Remove all liquidity
         uint256 totalSupply = totalSupply();
-        if (totalSupply > 0) {
-            _burnLiquidity(baseRange, totalSupply, address(this), true);
-            _burnLiquidity(rebalanceRange, totalSupply, address(this), true);
-        }
+        _burnLiquidity(baseRange, totalSupply, address(this), true);
+        _burnLiquidity(rebalanceRange, totalSupply, address(this), true);
 
         // Update base range and add liquidity
         baseRange = Range(tick - baseThreshold, tickPlusSpacing + baseThreshold);
-        uint128 baseAmount = _getLiquidityForAmounts(baseRange, token0.balanceOf(address(this)), token1.balanceOf(address(this)));
+        uint128 baseAmount =
+            _getLiquidityForAmounts(
+                baseRange,
+                token0.balanceOf(address(this)),
+                token1.balanceOf(address(this))
+            );
         _mintLiquidity(baseRange, baseAmount, address(this));
 
         // Update rebalance range
@@ -178,7 +182,12 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             baseRange.tickLower != rebalanceRange.tickLower ||
                 baseRange.tickUpper != rebalanceRange.tickUpper
         );
-        uint128 rebalanceAmount = _getLiquidityForAmounts(rebalanceRange, token0.balanceOf(address(this)), token1.balanceOf(address(this)));
+        uint128 rebalanceAmount =
+            _getLiquidityForAmounts(
+                rebalanceRange,
+                token0.balanceOf(address(this)),
+                token1.balanceOf(address(this))
+            );
         _mintLiquidity(rebalanceRange, rebalanceAmount, address(this));
     }
 
