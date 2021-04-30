@@ -20,10 +20,8 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 // TODO: chagne contract name to PassiveRebalancingVault
 // TODO: extend interface
 // TODO: choose name and symbol
-// TODO: cap
 // TODO: multicall
 // TODO: events
-// TODO: protocol fee, charged in update()
 // TODO: test getBalances
 // TODO: floorTick -> current range (return Range)
 // TODO: fuzzing
@@ -59,6 +57,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     address public governance;
     address public pendingGovernance;
+    address public keeper;
     uint256 public lastUpdate;
 
     constructor(
@@ -119,8 +118,8 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     ) external returns (uint256 shares) {
         require(to != address(0), "to");
 
-        uint256 totalSupply = totalSupply();
-        if (totalSupply == 0) {
+        uint256 _totalSupply = totalSupply();
+        if (_totalSupply == 0) {
             return _initialMint(maxAmount0, maxAmount1, to);
         }
 
@@ -132,9 +131,9 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         assert(balance0 > 0 || balance1 > 0);
 
         uint256 shares0 =
-            balance0 > 0 ? maxAmount0.mul(totalSupply).div(balance0) : type(uint256).max;
+            balance0 > 0 ? maxAmount0.mul(_totalSupply).div(balance0) : type(uint256).max;
         uint256 shares1 =
-            balance1 > 0 ? maxAmount1.mul(totalSupply).div(balance1) : type(uint256).max;
+            balance1 > 0 ? maxAmount1.mul(_totalSupply).div(balance1) : type(uint256).max;
         shares = shares0 < shares1 ? shares0 : shares1;
         require(shares > 0, "shares");
 
@@ -144,7 +143,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         _mintLiquidity(rebalanceRange, rebalanceAmount, msg.sender);
 
         _mint(to, shares);
-        _checkTotalSupplyCap();
+        require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
     }
 
     function _initialMint(
@@ -157,13 +156,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
         _mintLiquidity(baseRange, uint128(shares), msg.sender);
         _mint(to, shares);
-        _checkTotalSupplyCap();
-    }
-
-    function _checkTotalSupplyCap() internal {
-        if (totalSupplyCap > 0) {
-            require(totalSupply() <= totalSupplyCap, "totalSupplyCap");
-        }
+        require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
     }
 
     function burn(uint256 shares, address to) external nonReentrant {
@@ -176,6 +169,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     }
 
     function update() external {
+        require(keeper == address(0) || msg.sender == keeper, "keeper");
         require(block.timestamp >= lastUpdate.add(updateCooldown), "cooldown");
         lastUpdate = block.timestamp;
 
@@ -418,17 +412,21 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         pendingGovernance = _governance;
     }
 
+    function setKeeper(address _keeper) external onlyGovernance {
+        keeper = _keeper;
+    }
+
     /**
      * @notice setGovernance() should be called by the existing governance
      * address prior to calling this function.
      */
     function acceptGovernance() external {
-        require(msg.sender == pendingGovernance, "!pendingGovernance");
+        require(msg.sender == pendingGovernance, "pendingGovernance");
         governance = msg.sender;
     }
 
     modifier onlyGovernance {
-        require(msg.sender == governance, "!governance");
+        require(msg.sender == governance, "governance");
         _;
     }
 }

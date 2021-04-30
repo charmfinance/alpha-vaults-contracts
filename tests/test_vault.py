@@ -181,6 +181,30 @@ def test_rebalance_when_empty_then_mint(
     assert rebalance[0] == 0
 
 
+def test_burn_all(vault, pool, tokens, getPositions, gov, user, recipient):
+    # Fast-forward 24 hours to avoid cooldown
+    chain.sleep(24 * 60 * 60)
+
+    # Mint
+    tx = vault.mint(1e17, 1e19, gov, {"from": gov})
+    shares = tx.return_value
+
+    # Update
+    vault.update({"from": gov})
+
+    # Burn all
+    vault.burn(shares, gov, {"from": gov})
+
+    # Check vault is empty
+    assert vault.totalSupply() == 0
+    assert tokens[0].balanceOf(vault) == 0
+    assert tokens[1].balanceOf(vault) == 0
+
+    base, rebalance = getPositions(vault)
+    assert base[0] == 0
+    assert rebalance[0] == 0
+
+
 def test_balances_when_empty():
     1
 
@@ -242,7 +266,7 @@ def test_update_cooldown(vault, gov):
 
 
 def test_governance_methods(vault, tokens, gov, user, recipient):
-    with reverts("!governance"):
+    with reverts("governance"):
         vault.setBaseThreshold(0, {"from": user})
     with reverts("baseThreshold"):
         vault.setBaseThreshold(2401, {"from": gov})
@@ -251,7 +275,7 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     vault.setBaseThreshold(4800, {"from": gov})
     assert vault.baseThreshold() == 4800
 
-    with reverts("!governance"):
+    with reverts("governance"):
         vault.setRebalanceThreshold(0, {"from": user})
     with reverts("rebalanceThreshold"):
         vault.setRebalanceThreshold(1201, {"from": gov})
@@ -260,26 +284,26 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     vault.setRebalanceThreshold(600, {"from": gov})
     assert vault.rebalanceThreshold() == 600
 
-    with reverts("!governance"):
+    with reverts("governance"):
         vault.setTwapDuration(800, {"from": user})
     vault.setTwapDuration(800, {"from": gov})
     assert vault.twapDuration() == 800
 
-    with reverts("!governance"):
+    with reverts("governance"):
         vault.setUpdateCooldown(12 * 60 * 60, {"from": user})
     vault.setUpdateCooldown(12 * 60 * 60, {"from": gov})
     assert vault.updateCooldown() == 12 * 60 * 60
 
-    with reverts("!governance"):
+    with reverts("governance"):
         vault.setTotalSupplyCap(0, {"from": user})
     vault.setTotalSupplyCap(0, {"from": gov})
     assert vault.totalSupplyCap() == 0
 
-    with reverts("!governance"):
+    with reverts("governance"):
         vault.setGovernance(recipient, {"from": user})
     vault.setGovernance(recipient, {"from": gov})
 
-    with reverts("!pendingGovernance"):
+    with reverts("pendingGovernance"):
         vault.acceptGovernance({"from": user})
     vault.acceptGovernance({"from": recipient})
     assert vault.governance() == recipient
