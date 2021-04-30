@@ -3,8 +3,8 @@ import pytest
 from pytest import approx
 
 
-def test_constructor(Vault, pool, gov):
-    vault = gov.deploy(Vault, pool, 2400, 1200, 600, 12 * 60 * 60, 100e18)
+def test_constructor(PassiveRebalanceVault, pool, gov):
+    vault = gov.deploy(PassiveRebalanceVault, pool, 2400, 1200, 600, 12 * 60 * 60, 100e18)
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
     assert vault.token1() == pool.token1()
@@ -14,7 +14,7 @@ def test_constructor(Vault, pool, gov):
     assert vault.baseThreshold() == 2400
     assert vault.rebalanceThreshold() == 1200
     assert vault.twapDuration() == 600
-    assert vault.updateCooldown() == 12 * 60 * 60
+    assert vault.refreshCooldown() == 12 * 60 * 60
     assert vault.totalSupplyCap() == 100e18
     assert vault.governance() == gov
 
@@ -22,23 +22,23 @@ def test_constructor(Vault, pool, gov):
     assert vault.baseRange() == (tick - 2400, tick + 2460)
     assert vault.rebalanceRange() == (0, 0)
 
-    assert vault.name() == "name"
-    assert vault.symbol() == "symbol"
+    assert vault.name() == "Passive Rebalance Vault"
+    assert vault.symbol() == "PRV"
     assert vault.decimals() == 18
 
 
-def test_constructor_checks(Vault, pool, gov):
+def test_constructor_checks(PassiveRebalanceVault, pool, gov):
     with reverts("baseThreshold"):
-        gov.deploy(Vault, pool, 2401, 1200, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 2401, 1200, 600, 23 * 60 * 60, 100e18)
 
     with reverts("rebalanceThreshold"):
-        gov.deploy(Vault, pool, 2400, 1201, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 2400, 1201, 600, 23 * 60 * 60, 100e18)
 
     with reverts("baseThreshold"):
-        gov.deploy(Vault, pool, 0, 1200, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 0, 1200, 600, 23 * 60 * 60, 100e18)
 
     with reverts("rebalanceThreshold"):
-        gov.deploy(Vault, pool, 2400, 0, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 2400, 0, 600, 23 * 60 * 60, 100e18)
 
 
 @pytest.mark.parametrize(
@@ -87,10 +87,10 @@ def test_mint_existing(
     maxAmount1,
 ):
 
-    # Mint and update to simulate existing activity
+    # Mint and refresh to simulate existing activity
     vault.mint(1e17, 1e19, gov, {"from": gov})
     router.swap(pool, True, 1e16, {"from": gov})
-    vault.update({"from": gov})
+    vault.refresh({"from": gov})
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(user)
@@ -129,18 +129,18 @@ def test_mint_existing(
 
 def test_burn(vault, pool, tokens, router, getPositions, gov, user, recipient):
 
-    # Mint and update to simulate existing activity
+    # Mint and refresh to simulate existing activity
     vault.mint(1e17, 1e19, gov, {"from": gov})
     router.swap(pool, True, 1e16, {"from": gov})
-    vault.update({"from": gov})
+    vault.refresh({"from": gov})
 
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)
 
-    # Mint and update
+    # Mint and refresh
     tx = vault.mint(1e6, 1e8, user, {"from": user})
     shares = tx.return_value
-    vault.update({"from": gov})
+    vault.refresh({"from": gov})
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(recipient)
@@ -169,8 +169,8 @@ def test_rebalance_when_empty_then_mint(
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)
 
-    # Update
-    vault.update({"from": gov})
+    # Refresh
+    vault.refresh({"from": gov})
 
     tx = vault.mint(1e6, 1e8, user, {"from": user})
     shares = tx.return_value
@@ -189,8 +189,8 @@ def test_burn_all(vault, pool, tokens, getPositions, gov, user, recipient):
     tx = vault.mint(1e17, 1e19, gov, {"from": gov})
     shares = tx.return_value
 
-    # Update
-    vault.update({"from": gov})
+    # Refresh
+    vault.refresh({"from": gov})
 
     # Burn all
     vault.burn(shares, gov, {"from": gov})
@@ -226,7 +226,7 @@ def test_update(vault, pool, tokens, router, getPositions, gov, user, buy, big):
     assert tick != prevTick
 
     # Rebalance
-    vault.update({"from": gov})
+    vault.refresh({"from": gov})
     tick2 = pool.slot0()[1] // 60 * 60
     assert tick == tick2
 
@@ -253,16 +253,16 @@ def test_update(vault, pool, tokens, router, getPositions, gov, user, buy, big):
 
 
 def test_update_cooldown(vault, gov):
-    vault.update({"from": gov})
+    vault.refresh({"from": gov})
 
-    # After 22 hours, cannot update yet
+    # After 22 hours, cannot refresh yet
     chain.sleep(22 * 60 * 60)
     with reverts("cooldown"):
-        vault.update({"from": gov})
+        vault.refresh({"from": gov})
 
-    # After another 2 hours, update works
+    # After another 2 hours, refresh works
     chain.sleep(2 * 60 * 60)
-    vault.update({"from": gov})
+    vault.refresh({"from": gov})
 
 
 def test_governance_methods(vault, tokens, gov, user, recipient):
@@ -290,9 +290,9 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.twapDuration() == 800
 
     with reverts("governance"):
-        vault.setUpdateCooldown(12 * 60 * 60, {"from": user})
-    vault.setUpdateCooldown(12 * 60 * 60, {"from": gov})
-    assert vault.updateCooldown() == 12 * 60 * 60
+        vault.setRefreshCooldown(12 * 60 * 60, {"from": user})
+    vault.setRefreshCooldown(12 * 60 * 60, {"from": gov})
+    assert vault.refreshCooldown() == 12 * 60 * 60
 
     with reverts("governance"):
         vault.setTotalSupplyCap(0, {"from": user})

@@ -17,20 +17,17 @@ import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
-// TODO: chagne contract name to PassiveRebalancingVault
-// TODO: extend interface
+
 // TODO: choose name and symbol
-// TODO: multicall
 // TODO: events
 // TODO: test getBalances
 // TODO: floorTick -> current range (return Range)
 // TODO: fuzzing
-// TODO: only updater
 
 /**
- * @title   Vault
+ * @title   Passive Rebalance Vault
  */
-contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
+contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
     using Position for mapping(bytes32 => Position.Info);
@@ -44,7 +41,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     int24 public baseThreshold;
     int24 public rebalanceThreshold;
     uint32 public twapDuration;
-    uint256 public updateCooldown;
+    uint256 public refreshCooldown;
     uint256 public totalSupplyCap;
 
     struct Range {
@@ -65,9 +62,9 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         int24 _baseThreshold,
         int24 _rebalanceThreshold,
         uint32 _twapDuration,
-        uint256 _updateCooldown,
+        uint256 _refreshCooldown,
         uint256 _totalSupplyCap
-    ) ERC20("name", "symbol") {
+    ) ERC20("Passive Rebalance Vault", "PRV") {
         require(_pool != address(0));
         pool = IUniswapV3Pool(_pool);
 
@@ -84,7 +81,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         baseThreshold = _baseThreshold;
         rebalanceThreshold = _rebalanceThreshold;
         twapDuration = _twapDuration;
-        updateCooldown = _updateCooldown;
+        refreshCooldown = _refreshCooldown;
         totalSupplyCap = _totalSupplyCap;
 
         governance = msg.sender;
@@ -168,9 +165,9 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         _burn(msg.sender, shares);
     }
 
-    function update() external {
+    function refresh() external {
         require(keeper == address(0) || msg.sender == keeper, "keeper");
-        require(block.timestamp >= lastUpdate.add(updateCooldown), "cooldown");
+        require(block.timestamp >= lastUpdate.add(refreshCooldown), "cooldown");
         lastUpdate = block.timestamp;
 
         int24 tick = _floorTick();
@@ -392,8 +389,8 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         rebalanceThreshold = _rebalanceThreshold;
     }
 
-    function setUpdateCooldown(uint256 _updateCooldown) external onlyGovernance {
-        updateCooldown = _updateCooldown;
+    function setRefreshCooldown(uint256 _refreshCooldown) external onlyGovernance {
+        refreshCooldown = _refreshCooldown;
     }
 
     function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
@@ -405,7 +402,7 @@ contract Vault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     }
 
     /**
-     * @notice Governance address is not update until the new governance
+     * @notice Governance address is not updated until the new governance
      * address has called acceptGovernance() to accept this responsibility.
      */
     function setGovernance(address _governance) external onlyGovernance {
