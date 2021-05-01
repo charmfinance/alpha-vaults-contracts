@@ -116,9 +116,9 @@ def vaultAfterPriceDown(vault, pool, router, gov):
     vault.refresh({"from": gov})
 
     # Check vault holds only token0
-    value0, value1 = vault.getBalances()
-    assert value0 > 0
-    assert value1 == 0
+    total0, total1 = vault.getTotalAmounts()
+    assert total0 > 0
+    assert total1 == 0
 
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)
@@ -137,9 +137,9 @@ def vaultAfterPriceUp(vault, pool, router, gov):
     vault.refresh({"from": gov})
 
     # Check vault holds only token0
-    value0, value1 = vault.getBalances()
-    assert value0 == 0
-    assert value1 > 0
+    total0, total1 = vault.getTotalAmounts()
+    assert total0 == 0
+    assert total1 > 0
 
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)

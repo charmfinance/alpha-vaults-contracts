@@ -373,7 +373,7 @@ def test_values(vaultAfterPriceMove, tokens, user, recipient, maxAmount0, maxAmo
     # Store balances and values
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
-    value0, value1 = vault.getBalances()
+    total0, total1 = vault.getTotalAmounts()
 
     # Mint some liquidity
     vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
@@ -381,10 +381,10 @@ def test_values(vaultAfterPriceMove, tokens, user, recipient, maxAmount0, maxAmo
     # Check amounts match values
     dbalance0 = balance0 - tokens[0].balanceOf(user)
     dbalance1 = balance1 - tokens[1].balanceOf(user)
-    dvalue0 = vault.getBalances()[0] - value0
-    dvalue1 = vault.getBalances()[1] - value1
-    assert approx(dbalance0, abs=1) == dvalue0
-    assert approx(dbalance1, abs=1) == dvalue1
+    damount0 = vault.getTotalAmounts()[0] - total0
+    damount1 = vault.getTotalAmounts()[1] - total1
+    assert approx(dbalance0, abs=1) == damount0
+    assert approx(dbalance1, abs=1) == damount1
 
 
 @pytest.mark.parametrize(
@@ -405,19 +405,19 @@ def test_values_per_share_do_not_increase(
     vault = vaultAfterPriceMove
 
     # Store balances and values
-    value0, value1 = vault.getBalances()
+    total0, total1 = vault.getTotalAmounts()
     supply = vault.totalSupply()
-    valuePerShare0 = value0 / supply
-    valuePerShare1 = value1 / supply
+    valuePerShare0 = total0 / supply
+    valuePerShare1 = total1 / supply
 
     # Mint some liquidity
     vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
 
     # Check amounts match values
-    value0, value1 = vault.getBalances()
+    total0, total1 = vault.getTotalAmounts()
     supply = vault.totalSupply()
-    newValuePerShare0 = value0 / supply
-    newValuePerShare1 = value1 / supply
+    newValuePerShare0 = total0 / supply
+    newValuePerShare1 = total1 / supply
     assert newValuePerShare0 <= valuePerShare0
     assert newValuePerShare1 <= valuePerShare1
     assert approx(newValuePerShare0, abs=1) == valuePerShare0
@@ -438,19 +438,19 @@ def test_values_do_not_change_after_refresh(
     router.swap(pool, buy, qty, {"from": gov})
 
     # Rebalance
-    values0 = vault.getBalances()
+    total0, total1 = vault.getTotalAmounts()
     vault.refresh({"from": gov})
 
     # Check values haven't changed - they should only increase a bit due to fees earned
-    values1 = vault.getBalances()
+    newTotal0, newTotal1 = vault.getTotalAmounts()
     if buy:
-        assert approx(values0[1]) == values1[1]
-        assert approx(values0[0], rel=1e-2) == values1[0]
-        assert values0[0] < values1[0]
+        assert approx(total1) == newTotal1
+        assert approx(total0, rel=1e-2) == newTotal0
+        assert total0 < newTotal0
     else:
-        assert approx(values0[0]) == values1[0]
-        assert approx(values0[1], rel=1e-2) == values1[1]
-        assert values0[1] < values1[1]
+        assert approx(total0) == newTotal0
+        assert approx(total1, rel=1e-2) == newTotal1
+        assert total1 < newTotal1
 
 
 def test_update_cooldown(vault, gov):
@@ -470,7 +470,6 @@ def test_update_cooldown(vault, gov):
     tick = pool.slot0()[1] // 60 * 60
 
     # Rebalance
-    values0 = vault.getBalances()
     vault.refresh({"from": gov})
     tick2 = pool.slot0()[1] // 60 * 60
     assert tick == tick2
