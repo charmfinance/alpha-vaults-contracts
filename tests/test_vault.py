@@ -4,7 +4,9 @@ from pytest import approx
 
 
 def test_constructor(PassiveRebalanceVault, pool, gov):
-    vault = gov.deploy(PassiveRebalanceVault, pool, 2400, 1200, 600, 12 * 60 * 60, 100e18)
+    vault = gov.deploy(
+        PassiveRebalanceVault, pool, 2400, 1200, 600, 12 * 60 * 60, 100e18
+    )
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
     assert vault.token1() == pool.token1()

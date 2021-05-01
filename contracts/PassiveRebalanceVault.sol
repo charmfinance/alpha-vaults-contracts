@@ -17,7 +17,6 @@ import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
-
 // TODO: choose name and symbol
 // TODO: events
 // TODO: test getBalances
