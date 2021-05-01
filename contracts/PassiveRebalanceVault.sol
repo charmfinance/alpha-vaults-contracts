@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Unlicense
 
 pragma solidity 0.7.6;
+pragma abicoder v2; // TODO remove
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
@@ -113,8 +114,8 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         }
 
         // Decrease slightly so amounts don't exceed max
-        maxAmount0 = maxAmount0.sub(2);
-        maxAmount1 = maxAmount1.sub(2);
+        maxAmount0 = maxAmount0 >= 2 ? maxAmount0.sub(2) : maxAmount0;
+        maxAmount1 = maxAmount1 >= 2 ? maxAmount1.sub(2) : maxAmount1;
 
         (uint256 balance0, uint256 balance1) = getBalances();
         assert(balance0 > 0 || balance1 > 0);
@@ -126,6 +127,7 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         } else {
             shares = maxAmount1.mul(_totalSupply).div(balance1);
         }
+        require(shares > 0, "shares");
 
         uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
         uint128 rebalanceLiquidity = _liquidityForShares(rebalanceRange, shares);
@@ -143,6 +145,7 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
     ) internal returns (uint256 shares) {
         shares = _liquidityForAmounts(baseRange, maxAmount0, maxAmount1);
         require(shares < type(uint128).max, "shares");
+        require(shares > 0, "shares");
 
         _mintLiquidity(baseRange, uint128(shares), msg.sender);
 
@@ -290,9 +293,10 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         return uint128(uint256(liquidity).mul(shares).div(totalSupply()));
     }
 
+    // TODO make internal
     /// @dev Amount of liquidity deposited by vault into Uniswap V3 pool for a
     /// certain range
-    function _deposited(Range memory range) internal view returns (uint128 liquidity) {
+    function _deposited(Range memory range) public view returns (uint128 liquidity) {
         bytes32 positionKey =
             keccak256(abi.encodePacked(address(this), range.tickLower, range.tickUpper));
         (liquidity, , , , ) = pool.positions(positionKey);
@@ -306,8 +310,9 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         return _liquidityForAmounts(range, balance0, balance1);
     }
 
+    // TODO make internal
     function _amountsForLiquidity(Range memory range, uint128 liquidity)
-        internal
+        public
         view
         returns (uint256, uint256)
     {

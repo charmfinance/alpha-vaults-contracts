@@ -1,3 +1,4 @@
+from brownie import chain
 from math import sqrt
 import pytest
 
@@ -79,6 +80,69 @@ def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
     for u in users:
         tokens[0].approve(vault, 100e18, {"from": u})
         tokens[1].approve(vault, 10000e18, {"from": u})
+
+    yield vault
+
+
+@pytest.fixture
+def vaultAfterPriceMove(vault, pool, router, gov):
+
+    # Mint and move price to simulate existing activity
+    vault.mint(1e17, 1e19, gov, {"from": gov})
+    prevTick = pool.slot0()[1] // 60 * 60
+    router.swap(pool, True, 1e16, {"from": gov})
+
+    # Check price did indeed move
+    tick = pool.slot0()[1] // 60 * 60
+    assert tick != prevTick
+
+    # Refresh vault
+    vault.refresh({"from": gov})
+
+    # Fast-forward 24 hours to avoid cooldown
+    chain.sleep(24 * 60 * 60)
+
+    yield vault
+
+
+@pytest.fixture
+def vaultAfterPriceDown(vault, pool, router, gov):
+
+    # Mint and move price to simulate existing activity
+    vault.mint(1e17, 1e19, gov, {"from": gov})
+    router.swap(pool, True, 1e18, {"from": gov})  # True means swap token0 -> token1
+
+    # Refresh vault
+    vault.refresh({"from": gov})
+
+    # Check vault holds only token0
+    value0, value1 = vault.getBalances()
+    assert value0 > 0
+    assert value1 == 0
+
+    # Fast-forward 24 hours to avoid cooldown
+    chain.sleep(24 * 60 * 60)
+
+    yield vault
+
+
+@pytest.fixture
+def vaultAfterPriceUp(vault, pool, router, gov):
+
+    # Mint and move price to simulate existing activity
+    vault.mint(1e17, 1e19, gov, {"from": gov})
+    router.swap(pool, False, 1e20, {"from": gov})  # False means swap token1 -> token0
+
+    # Refresh vault
+    vault.refresh({"from": gov})
+
+    # Check vault holds only token0
+    value0, value1 = vault.getBalances()
+    assert value0 == 0
+    assert value1 > 0
+
+    # Fast-forward 24 hours to avoid cooldown
+    chain.sleep(24 * 60 * 60)
 
     yield vault
 
