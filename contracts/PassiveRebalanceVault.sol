@@ -119,17 +119,18 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         (uint256 balance0, uint256 balance1) = getBalances();
         assert(balance0 > 0 || balance1 > 0);
 
-        uint256 shares0 =
-            balance0 > 0 ? maxAmount0.mul(_totalSupply).div(balance0) : type(uint256).max;
-        uint256 shares1 =
-            balance1 > 0 ? maxAmount1.mul(_totalSupply).div(balance1) : type(uint256).max;
-        shares = shares0 < shares1 ? shares0 : shares1;
-        require(shares > 0, "shares");
+        // Set shares to the maximum possible value that implies amounts not
+        // greater than `maxAmount0` and `maxAmount1`
+        if (maxAmount0.mul(balance1) < maxAmount1.mul(balance0) || balance1 == 0) {
+            shares = maxAmount0.mul(_totalSupply).div(balance0);
+        } else {
+            shares = maxAmount1.mul(_totalSupply).div(balance1);
+        }
 
-        uint128 baseAmount = _liquidityForShares(baseRange, shares);
-        uint128 rebalanceAmount = _liquidityForShares(rebalanceRange, shares);
-        _mintLiquidity(baseRange, baseAmount, msg.sender);
-        _mintLiquidity(rebalanceRange, rebalanceAmount, msg.sender);
+        uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
+        uint128 rebalanceLiquidity = _liquidityForShares(rebalanceRange, shares);
+        _mintLiquidity(baseRange, baseLiquidity, msg.sender);
+        _mintLiquidity(rebalanceRange, rebalanceLiquidity, msg.sender);
 
         _mint(to, shares);
         require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
@@ -144,6 +145,7 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         require(shares < type(uint128).max, "shares");
 
         _mintLiquidity(baseRange, uint128(shares), msg.sender);
+
         _mint(to, shares);
         require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
     }
@@ -152,8 +154,11 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         require(shares > 0, "shares");
         require(to != address(0), "to");
 
-        _burnLiquidity(baseRange, shares, to, false);
-        _burnLiquidity(rebalanceRange, shares, to, false);
+        uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
+        uint128 rebalanceLiquidity = _liquidityForShares(rebalanceRange, shares);
+        _burnLiquidity(baseRange, baseLiquidity, to, false);
+        _burnLiquidity(rebalanceRange, rebalanceLiquidity, to, false);
+
         _burn(msg.sender, shares);
     }
 
@@ -166,14 +171,12 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         // TODO: check twap matches
 
         // Remove all liquidity
-        uint256 totalSupply = totalSupply();
-        _burnLiquidity(baseRange, totalSupply, address(this), true);
-        _burnLiquidity(rebalanceRange, totalSupply, address(this), true);
+        _burnLiquidity(baseRange, _deposited(baseRange), address(this), true);
+        _burnLiquidity(rebalanceRange, _deposited(rebalanceRange), address(this), true);
 
         // Update base range and add liquidity
         baseRange = Range(mid.tickLower - baseThreshold, mid.tickUpper + baseThreshold);
-        uint128 baseAmount = _maxLiquidity(baseRange);
-        _mintLiquidity(baseRange, baseAmount, address(this));
+        _mintLiquidity(baseRange, _maxLiquidity(baseRange), address(this));
 
         // Update rebalance range
         if (token0.balanceOf(address(this)) > 0) {
@@ -188,8 +191,7 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
             baseRange.tickLower != rebalanceRange.tickLower ||
                 baseRange.tickUpper != rebalanceRange.tickUpper
         );
-        uint128 rebalanceAmount = _maxLiquidity(rebalanceRange);
-        _mintLiquidity(rebalanceRange, rebalanceAmount, address(this));
+        _mintLiquidity(rebalanceRange, _maxLiquidity(rebalanceRange), address(this));
     }
 
     function _mintLiquidity(
@@ -212,28 +214,24 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
 
     function _burnLiquidity(
         Range memory range,
-        uint256 shares,
+        uint128 liquidity,
         address to,
-        bool collectAll
+        bool collectFees
     ) internal {
-        if (shares == 0) {
-            return;
-        }
-
-        uint128 liquidity = _liquidityForShares(range, shares);
         if (liquidity == 0) {
             return;
         }
 
+        // Burn liquidity
         (uint256 amount0, uint256 amount1) =
             pool.burn(range.tickLower, range.tickUpper, liquidity);
-        uint128 collect0 = collectAll ? type(uint128).max : uint128(amount0);
-        uint128 collect1 = collectAll ? type(uint128).max : uint128(amount1);
-        if (collect0 == 0 && collect1 == 0) {
-            return;
-        }
 
-        pool.collect(to, range.tickLower, range.tickUpper, collect0, collect1);
+        // Collect amount owed
+        uint128 collect0 = collectFees ? type(uint128).max : uint128(amount0);
+        uint128 collect1 = collectFees ? type(uint128).max : uint128(amount1);
+        if (collect0 > 0 || collect1 > 0) {
+            pool.collect(to, range.tickLower, range.tickUpper, collect0, collect1);
+        }
     }
 
     /// @dev Callback for Uniswap V3 pool
@@ -273,20 +271,15 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
     }
 
     function getBalances() public view returns (uint256 balance0, uint256 balance1) {
-        balance0 = token0.balanceOf(address(this));
-        balance1 = token1.balanceOf(address(this));
-
-        (uint256 p0, uint256 p1) =
+        (uint256 baseAmount0, uint256 baseAmount1) =
             _amountsForLiquidity(baseRange, _deposited(baseRange));
-        (uint256 b0, uint256 b1) =
-            _amountsForLiquidity(
-                rebalanceRange,
-                _deposited(rebalanceRange)
-            );
-        balance0 = balance0.add(p0).add(b0);
-        balance1 = balance1.add(p1).add(b1);
+        (uint256 rebalanceAmount0, uint256 rebalanceAmount1) =
+            _amountsForLiquidity(rebalanceRange, _deposited(rebalanceRange));
+        balance0 = token0.balanceOf(address(this)).add(baseAmount0).add(rebalanceAmount0);
+        balance1 = token1.balanceOf(address(this)).add(baseAmount1).add(rebalanceAmount1);
     }
 
+    /// @dev Convert shares into amount of liquidity
     function _liquidityForShares(Range memory range, uint256 shares)
         internal
         view
@@ -297,11 +290,9 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         return uint128(uint256(liquidity).mul(shares).div(totalSupply()));
     }
 
-    function _deposited(Range memory range)
-        internal
-        view
-        returns (uint128 liquidity)
-    {
+    /// @dev Amount of liquidity deposited by vault into Uniswap V3 pool for a
+    /// certain range
+    function _deposited(Range memory range) internal view returns (uint128 liquidity) {
         bytes32 positionKey =
             keccak256(abi.encodePacked(address(this), range.tickLower, range.tickUpper));
         (liquidity, , , , ) = pool.positions(positionKey);

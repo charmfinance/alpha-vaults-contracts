@@ -73,6 +73,10 @@ def test_mint_initial(
         assert dbalance1 == maxAmount1
 
 
+def test_mint_initial_checks():
+    1
+
+
 @pytest.mark.parametrize(
     "maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]]
 )
