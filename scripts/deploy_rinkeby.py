@@ -11,8 +11,8 @@ FACTORY = "0xAE28628c0fdFb5e54d60FEDC6C9085199aec14dF"
 def main():
     deployer = accounts.load("deployer")
 
-    eth = deployer.deploy(MockToken, "Test ETH", "Test ETH", 18)
-    usdc = deployer.deploy(MockToken, "Test USDC", "Test USDC", 8)
+    eth = deployer.deploy(MockToken, "ETH", "ETH", 18)
+    usdc = deployer.deploy(MockToken, "USDC", "USDC", 8)
 
     eth.mint(deployer, 100 * 1e18, {"from": deployer})
     usdc.mint(deployer, 100000 * 1e8, {"from": deployer})

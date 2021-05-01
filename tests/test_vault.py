@@ -461,19 +461,6 @@ def test_update_cooldown(vault, gov):
     with reverts("cooldown"):
         vault.refresh({"from": gov})
 
-    # Mint some liquidity
-    vault.mint(1e17, 1e19, gov, {"from": gov})
-
-    # Do a swap to move the price
-    qty = 1e16 * [100, 1][buy] * [1, 100][big]
-    router.swap(pool, buy, qty, {"from": gov})
-    tick = pool.slot0()[1] // 60 * 60
-
-    # Rebalance
-    vault.refresh({"from": gov})
-    tick2 = pool.slot0()[1] // 60 * 60
-    assert tick == tick2
-
     # After another 2 hours, refresh works
     chain.sleep(2 * 60 * 60)
     vault.refresh({"from": gov})
