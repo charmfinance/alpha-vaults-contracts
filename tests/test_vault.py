@@ -5,7 +5,7 @@ from pytest import approx
 
 def test_constructor(PassiveRebalanceVault, pool, gov):
     vault = gov.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 600, 12 * 60 * 60, 100e18
+        PassiveRebalanceVault, pool, 2400, 1200, 500, 600, 12 * 60 * 60, 100e18
     )
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
@@ -15,6 +15,7 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
 
     assert vault.baseThreshold() == 2400
     assert vault.skewThreshold() == 1200
+    assert vault.maxTwapDeviation() == 500
     assert vault.twapDuration() == 600
     assert vault.rebalanceCooldown() == 12 * 60 * 60
     assert vault.totalSupplyCap() == 100e18
@@ -31,16 +32,25 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
 
 def test_constructor_checks(PassiveRebalanceVault, pool, gov):
     with reverts("baseThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 2401, 1200, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(
+            PassiveRebalanceVault, pool, 2401, 1200, 500, 600, 23 * 60 * 60, 100e18
+        )
 
     with reverts("skewThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 2400, 1201, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(
+            PassiveRebalanceVault, pool, 2400, 1201, 500, 600, 23 * 60 * 60, 100e18
+        )
 
     with reverts("baseThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 0, 1200, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 0, 1200, 500, 600, 23 * 60 * 60, 100e18)
 
     with reverts("skewThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 2400, 0, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 2400, 0, 500, 600, 23 * 60 * 60, 100e18)
+
+    with reverts("maxTwapDeviation"):
+        gov.deploy(
+            PassiveRebalanceVault, pool, 2400, 1200, -1, 600, 23 * 60 * 60, 100e18
+        )
 
 
 @pytest.mark.parametrize(
@@ -55,7 +65,7 @@ def test_mint_initial(
     balance1 = tokens[1].balanceOf(user)
 
     # Mint
-    tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
+    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
     shares, amount0, amount1 = tx.return_value
 
     # Check return values
@@ -72,14 +82,23 @@ def test_mint_initial(
         assert amount0 < maxAmount0
         assert amount1 == maxAmount1
 
+    # Check event
+    assert tx.events["Deposit"] == {
+        "sender": user,
+        "to": recipient,
+        "shares": shares,
+        "amount0": amount0,
+        "amount1": amount1,
+    }
+
 
 def test_mint_initial_checks(vault, user, recipient):
     with reverts("shares"):
-        vault.mint(0, 1e8, recipient, {"from": user})
+        vault.deposit(0, 1e8, recipient, {"from": user})
     with reverts("shares"):
-        vault.mint(1e8, 0, recipient, {"from": user})
+        vault.deposit(1e8, 0, recipient, {"from": user})
     with reverts("to"):
-        vault.mint(1e8, 1e8, ZERO_ADDRESS, {"from": user})
+        vault.deposit(1e8, 1e8, ZERO_ADDRESS, {"from": user})
 
 
 @pytest.mark.parametrize(
@@ -106,7 +125,7 @@ def test_mint_existing(
     base0, skew0 = getPositions(vault)
 
     # Mint
-    tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
+    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
     shares, amount0, amount1 = tx.return_value
 
     # Check return values
@@ -132,6 +151,15 @@ def test_mint_existing(
     ratio = (totalSupply + shares) / totalSupply
     assert approx(base1[0] / base0[0]) == ratio
     assert approx(skew1[0] / skew0[0]) == ratio
+
+    # Check event
+    assert tx.events["Deposit"] == {
+        "sender": user,
+        "to": recipient,
+        "shares": shares,
+        "amount0": amount0,
+        "amount1": amount1,
+    }
 
 
 @pytest.mark.parametrize(
@@ -159,7 +187,7 @@ def test_mint_existing_when_price_up(
     base0, skew0 = getPositions(vault)
 
     # Mint
-    tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
+    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
     shares, amount0, amount1 = tx.return_value
 
     # Check return values
@@ -204,7 +232,7 @@ def test_mint_existing_when_price_down(
     base0, skew0 = getPositions(vault)
 
     # Mint
-    tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
+    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
     shares, amount0, amount1 = tx.return_value
 
     # Check return values
@@ -226,23 +254,23 @@ def test_mint_existing_when_price_down(
 
 def test_mint_existing_checks(vaultAfterPriceMove, user, recipient):
     with reverts("shares"):
-        vaultAfterPriceMove.mint(0, 1e8, recipient, {"from": user})
+        vaultAfterPriceMove.deposit(0, 1e8, recipient, {"from": user})
     with reverts("shares"):
-        vaultAfterPriceMove.mint(1e8, 0, recipient, {"from": user})
+        vaultAfterPriceMove.deposit(1e8, 0, recipient, {"from": user})
     with reverts("to"):
-        vaultAfterPriceMove.mint(1e8, 1e8, ZERO_ADDRESS, {"from": user})
+        vaultAfterPriceMove.deposit(1e8, 1e8, ZERO_ADDRESS, {"from": user})
 
 
 def test_mint_existing_checks_when_price_up(vaultAfterPriceUp, user, recipient):
     with reverts("shares"):
-        vaultAfterPriceUp.mint(1e8, 0, recipient, {"from": user})
-    vaultAfterPriceUp.mint(0, 1e8, recipient, {"from": user})
+        vaultAfterPriceUp.deposit(1e8, 0, recipient, {"from": user})
+    vaultAfterPriceUp.deposit(0, 1e8, recipient, {"from": user})
 
 
 def test_mint_existing_checks_when_price_down(vaultAfterPriceDown, user, recipient):
     with reverts("shares"):
-        vaultAfterPriceDown.mint(0, 1e8, recipient, {"from": user})
-    vaultAfterPriceDown.mint(1e8, 0, recipient, {"from": user})
+        vaultAfterPriceDown.deposit(0, 1e8, recipient, {"from": user})
+    vaultAfterPriceDown.deposit(1e8, 0, recipient, {"from": user})
 
 
 def test_burn(
@@ -254,7 +282,7 @@ def test_burn(
     chain.sleep(24 * 60 * 60)
 
     # Mint and rebalance
-    tx = vault.mint(1e6, 1e8, user, {"from": user})
+    tx = vault.deposit(1e6, 1e8, user, {"from": user})
     shares, _, _ = tx.return_value
     vault.rebalance({"from": gov})
 
@@ -265,7 +293,7 @@ def test_burn(
     base0, skew0 = getPositions(vault)
 
     # Burn
-    tx = vault.burn(shares, recipient, {"from": user})
+    tx = vault.withdraw(shares, recipient, {"from": user})
     amount0, amount1 = tx.return_value
     assert vault.balanceOf(user) == 0
 
@@ -278,6 +306,15 @@ def test_burn(
     assert tokens[0].balanceOf(recipient) - balance0 == amount0 > 0
     assert tokens[1].balanceOf(recipient) - balance1 == amount1 > 0
 
+    # Check event
+    assert tx.events["Withdraw"] == {
+        "sender": user,
+        "to": recipient,
+        "shares": shares,
+        "amount0": amount0,
+        "amount1": amount1,
+    }
+
 
 def test_rebalance_when_empty_then_mint(
     vault, pool, tokens, getPositions, gov, user, recipient
@@ -289,7 +326,7 @@ def test_rebalance_when_empty_then_mint(
     # Rebalance
     vault.rebalance({"from": gov})
 
-    tx = vault.mint(1e6, 1e8, user, {"from": user})
+    vault.deposit(1e6, 1e8, user, {"from": user})
 
     # Check liquidity in pool
     base, rebalance = getPositions(vault)
@@ -303,14 +340,14 @@ def test_burn_all(vault, pool, tokens, getPositions, gov, user, recipient):
     chain.sleep(24 * 60 * 60)
 
     # Mint
-    tx = vault.mint(1e17, 1e19, gov, {"from": gov})
+    tx = vault.deposit(1e17, 1e19, gov, {"from": gov})
     shares, _, _ = tx.return_value
 
     # Rebalance
     vault.rebalance({"from": gov})
 
     # Burn all
-    vault.burn(shares, gov, {"from": gov})
+    vault.withdraw(shares, gov, {"from": gov})
 
     # Check vault is empty
     assert vault.totalSupply() == 0
@@ -331,22 +368,23 @@ def test_balances_when_empty():
 def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, big):
 
     # Mint some liquidity
-    vault.mint(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(1e17, 1e19, gov, {"from": gov})
 
     # Do a swap to move the price
     qty = 1e16 * [100, 1][buy] * [1, 100][big]
     router.swap(pool, buy, qty, {"from": gov})
 
     # Rebalance
-    vault.rebalance({"from": gov})
+    tx = vault.rebalance({"from": gov})
 
     # Check ranges are set correctly
-    tick = pool.slot0()[1] // 60 * 60
-    assert vault.baseRange() == (tick - 2400, tick + 60 + 2400)
+    tick = pool.slot0()[1]
+    tickFloor = tick // 60 * 60
+    assert vault.baseRange() == (tickFloor - 2400, tickFloor + 60 + 2400)
     if buy:
-        assert vault.skewRange() == (tick + 60, tick + 60 + 1200)
+        assert vault.skewRange() == (tickFloor + 60, tickFloor + 60 + 1200)
     else:
-        assert vault.skewRange() == (tick - 1200, tick)
+        assert vault.skewRange() == (tickFloor - 1200, tickFloor)
 
     base, rebalance = getPositions(vault)
 
@@ -362,6 +400,40 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     assert tokens[0].balanceOf(vault) < 1000
     assert tokens[1].balanceOf(vault) < 1000
 
+    # Check event
+    total0, total1 = vault.getTotalAmounts()
+    (ev,) = tx.events["Rebalance"]
+    assert ev["tick"] == tick
+    assert approx(ev["totalAmount0"]) == total0
+    assert approx(ev["totalAmount1"]) == total1
+    assert ev["totalSupply"] == vault.totalSupply()
+
+
+@pytest.mark.parametrize("buy", [False, True])
+def test_rebalance_twap_check(
+    vault, pool, tokens, router, getPositions, gov, user, buy
+):
+
+    # Reduce max deviation
+    vault.setMaxTwapDeviation(500, {"from": gov})
+
+    # Mint some liquidity
+    vault.deposit(1e17, 1e19, gov, {"from": gov})
+
+    # Do a swap to move the price a lot
+    qty = 1e16 * 100 * [100, 1][buy]
+    router.swap(pool, buy, qty, {"from": gov})
+
+    # Rebalance
+    with reverts("maxTwapDeviation"):
+        vault.rebalance({"from": gov})
+
+    # Wait for twap period to pass and poke price
+    chain.sleep(610)
+    router.swap(pool, buy, 1e8, {"from": gov})
+
+    vault.rebalance({"from": gov})
+
 
 @pytest.mark.parametrize(
     "maxAmount0,maxAmount1",
@@ -376,7 +448,7 @@ def test_values(vaultAfterPriceMove, tokens, user, recipient, maxAmount0, maxAmo
     total0, total1 = vault.getTotalAmounts()
 
     # Mint some liquidity
-    tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
+    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
     _, amount0, amount1 = tx.return_value
 
     # Check amounts match values
@@ -408,7 +480,7 @@ def test_values_per_share_do_not_increase(
     valuePerShare1 = total1 / supply
 
     # Mint some liquidity
-    vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
+    vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
 
     # Check amounts match values
     total0, total1 = vault.getTotalAmounts()
@@ -428,7 +500,7 @@ def test_values_do_not_change_after_rebalance(
 ):
 
     # Mint some liquidity
-    vault.mint(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(1e17, 1e19, gov, {"from": gov})
 
     # Do a swap to move the price
     qty = 1e16 * [100, 1][buy] * [1, 100][big]
@@ -450,7 +522,7 @@ def test_values_do_not_change_after_rebalance(
         assert total1 < newTotal1
 
 
-def test_update_cooldown(vault, gov):
+def test_rebalance_cooldown(vault, gov):
     vault.rebalance({"from": gov})
 
     # After 22 hours, cannot rebalance yet
@@ -481,6 +553,13 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
         vault.setSkewThreshold(0, {"from": gov})
     vault.setSkewThreshold(600, {"from": gov})
     assert vault.skewThreshold() == 600
+
+    with reverts("governance"):
+        vault.setMaxTwapDeviation(1000, {"from": user})
+    with reverts("maxTwapDeviation"):
+        vault.setMaxTwapDeviation(-1, {"from": user})
+    vault.setMaxTwapDeviation(1000, {"from": gov})
+    assert vault.setMaxTwapDeviation() == 1000
 
     with reverts("governance"):
         vault.setTwapDuration(800, {"from": user})

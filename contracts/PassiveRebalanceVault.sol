@@ -21,10 +21,6 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
 import "../interfaces/IVault.sol";
 
-// TODO: events
-// TODO: fuzzing
-// TODO: add twap check
-
 /**
  * @title   Passive Rebalance Vault
  * @notice  A vault that provides liquidity on Uniswap V3 on behalf of users
@@ -53,6 +49,7 @@ contract PassiveRebalanceVault is
 
     int24 public baseThreshold;
     int24 public skewThreshold;
+    int24 public maxTwapDeviation;
     uint32 public twapDuration;
     uint256 public rebalanceCooldown;
     uint256 public totalSupplyCap;
@@ -78,6 +75,7 @@ contract PassiveRebalanceVault is
         address _pool,
         int24 _baseThreshold,
         int24 _skewThreshold,
+        int24 _maxTwapDeviation,
         uint32 _twapDuration,
         uint256 _rebalanceCooldown,
         uint256 _totalSupplyCap
@@ -91,6 +89,7 @@ contract PassiveRebalanceVault is
 
         baseThreshold = _baseThreshold;
         skewThreshold = _skewThreshold;
+        maxTwapDeviation = _maxTwapDeviation;
         twapDuration = _twapDuration;
         rebalanceCooldown = _rebalanceCooldown;
         totalSupplyCap = _totalSupplyCap;
@@ -103,6 +102,7 @@ contract PassiveRebalanceVault is
         require(_skewThreshold % tickSpacing == 0, "skewThreshold");
         require(_baseThreshold > 0, "baseThreshold");
         require(_skewThreshold > 0, "skewThreshold");
+        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
     }
 
     function deposit(
@@ -190,8 +190,6 @@ contract PassiveRebalanceVault is
         require(block.timestamp >= lastUpdate.add(rebalanceCooldown), "cooldown");
         lastUpdate = block.timestamp;
 
-        // TODO: check twap matches
-
         // Withdraw all liquidity from Uniswap
         _burnLiquidity(baseRange, _deposited(baseRange), address(this), true);
         _burnLiquidity(skewRange, _deposited(skewRange), address(this), true);
@@ -201,6 +199,12 @@ contract PassiveRebalanceVault is
         uint256 balance1 = token1.balanceOf(address(this));
         (, int24 tick, , , , , ) = pool.slot0();
         emit Rebalance(tick, balance0, balance1, totalSupply());
+
+        // Check TWAP deviation. This check prevents price manipulation before
+        // the rebalance and also avoids rebalancing when price has just spiked.
+        int24 twap = _twap();
+        int24 deviation = tick > twap ? tick - twap : twap - tick;
+        require(deviation <= maxTwapDeviation, "maxTwapDeviation");
 
         // Update base range and place order
         baseRange = _baseRange();
@@ -233,8 +237,7 @@ contract PassiveRebalanceVault is
 
         // Deposit liquidity into Uniswap. The initial mint only places an
         // order in the base range and ignores the skew range.
-        (amount0, amount1) =
-            _mintLiquidity(baseRange, uint128(shares), msg.sender);
+        (amount0, amount1) = _mintLiquidity(baseRange, uint128(shares), msg.sender);
 
         // Mint shares
         _mint(to, shares);
@@ -420,7 +423,8 @@ contract PassiveRebalanceVault is
         (sqrtRatioX96, , , , , , ) = pool.slot0();
     }
 
-    function _getTwap() internal view returns (int24) {
+    // TODO: make internal
+    function _twap() public view returns (int24) {
         uint32[] memory secondsAgo = new uint32[](2);
         secondsAgo[0] = twapDuration;
         secondsAgo[1] = 0;
@@ -450,16 +454,21 @@ contract PassiveRebalanceVault is
         skewThreshold = _skewThreshold;
     }
 
+    function setMaxTwapDeviation(int24 _maxTwapDeviation) external onlyGovernance {
+        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+        maxTwapDeviation = _maxTwapDeviation;
+    }
+
+    function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
+        twapDuration = _twapDuration;
+    }
+
     /**
      * @notice Set rebalance cooldown - the number of seconds that need to pass
      * since the last rebalance before rebalance() can be called again.
      */
     function setRebalanceCooldown(uint256 _rebalanceCooldown) external onlyGovernance {
         rebalanceCooldown = _rebalanceCooldown;
-    }
-
-    function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
-        twapDuration = _twapDuration;
     }
 
     /**

@@ -21,7 +21,7 @@ interface IVault {
 
     function getTotalAmounts() external view returns (uint256, uint256);
 
-    event Deposit (
+    event Deposit(
         address indexed sender,
         address indexed to,
         uint256 shares,
@@ -29,7 +29,7 @@ interface IVault {
         uint256 amount1
     );
 
-    event Withdraw (
+    event Withdraw(
         address indexed sender,
         address indexed to,
         uint256 shares,
@@ -37,7 +37,7 @@ interface IVault {
         uint256 amount1
     );
 
-    event Rebalance (
+    event Rebalance(
         int24 tick,
         uint256 totalAmount0,
         uint256 totalAmount1,

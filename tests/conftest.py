@@ -60,9 +60,14 @@ def pool(MockToken, router, pm, gov, users):
         token0.approve(router, 100e18, {"from": u})
         token1.approve(router, 10000e18, {"from": u})
 
-    # add some liquidity over whole range
+    # Add some liquidity over whole range
     max_tick = 887272 // 60 * 60
     router.mint(pool, -max_tick, max_tick, 1e16, {"from": gov})
+
+    # Increase cardinality and fast forward so twap works
+    pool.increaseObservationCardinalityNext(100, {"from": gov})
+    chain.sleep(3600)
+
     yield pool
 
 
@@ -74,7 +79,7 @@ def tokens(MockToken, pool):
 @pytest.fixture
 def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
     vault = gov.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 600, 23 * 60 * 60, 100e18
+        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 23 * 60 * 60, 100e18
     )
 
     for u in users:
@@ -88,7 +93,7 @@ def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
 def vaultAfterPriceMove(vault, pool, router, gov):
 
     # Mint and move price to simulate existing activity
-    vault.mint(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(1e17, 1e19, gov, {"from": gov})
     prevTick = pool.slot0()[1] // 60 * 60
     router.swap(pool, True, 1e16, {"from": gov})
 
@@ -109,7 +114,7 @@ def vaultAfterPriceMove(vault, pool, router, gov):
 def vaultAfterPriceDown(vault, pool, router, gov):
 
     # Mint and move price to simulate existing activity
-    vault.mint(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(1e17, 1e19, gov, {"from": gov})
     router.swap(pool, True, 1e18, {"from": gov})  # True means swap token0 -> token1
 
     # Refresh vault
@@ -130,8 +135,10 @@ def vaultAfterPriceDown(vault, pool, router, gov):
 def vaultAfterPriceUp(vault, pool, router, gov):
 
     # Mint and move price to simulate existing activity
-    vault.mint(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(1e17, 1e19, gov, {"from": gov})
     router.swap(pool, False, 1e20, {"from": gov})  # False means swap token1 -> token0
+
+    tick = pool.slot0()[1] // 60 * 60
 
     # Refresh vault
     vault.rebalance({"from": gov})
