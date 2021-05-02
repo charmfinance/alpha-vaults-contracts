@@ -21,7 +21,6 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
 import "../interfaces/IVault.sol";
 
-// TODO: return amounts from burn
 // TODO: events
 // TODO: fuzzing
 // TODO: add twap check
@@ -70,7 +69,7 @@ contract PassiveRebalanceVault is
      * @param _pool Underlying Uniswap V3 pool
      * @param _baseThreshold Width of base range order in ticks
      * @param _skewThreshold Width of skew range order in ticks
-     * @param _rebalanceCooldown How much time needs to pass between `rebalance()`
+     * @param _rebalanceCooldown How much time needs to pass between rebalance()
      * calls in seconds
      * @param _totalSupplyCap Users can't deposit if total supply would exceed
      * this limit. Value of 0 means no cap.
@@ -106,7 +105,7 @@ contract PassiveRebalanceVault is
         require(_skewThreshold > 0, "skewThreshold");
     }
 
-    function mint(
+    function deposit(
         uint256 maxAmount0,
         uint256 maxAmount1,
         address to
@@ -134,7 +133,7 @@ contract PassiveRebalanceVault is
         assert(total0 > 0 || total1 > 0);
 
         // Set shares to the maximum possible value that implies amounts not
-        // greater than `maxAmount0` and `maxAmount1`
+        // greater than maxAmount0 and maxAmount1
         if (maxAmount0.mul(total1) < maxAmount1.mul(total0) || total1 == 0) {
             shares = maxAmount0.mul(_totalSupply).div(total0);
         } else {
@@ -157,9 +156,10 @@ contract PassiveRebalanceVault is
         // Return amounts deposited
         amount0 = base0.add(skew0);
         amount1 = base1.add(skew1);
+        emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
-    function burn(uint256 shares, address to)
+    function withdraw(uint256 shares, address to)
         external
         override
         nonReentrant
@@ -182,6 +182,7 @@ contract PassiveRebalanceVault is
         // Return amounts withdrawn
         amount0 = base0.add(skew0);
         amount1 = base1.add(skew1);
+        emit Withdraw(msg.sender, to, shares, amount0, amount1);
     }
 
     function rebalance() external override {
@@ -194,6 +195,12 @@ contract PassiveRebalanceVault is
         // Withdraw all liquidity from Uniswap
         _burnLiquidity(baseRange, _deposited(baseRange), address(this), true);
         _burnLiquidity(skewRange, _deposited(skewRange), address(this), true);
+
+        // Emit event with useful info
+        uint256 balance0 = token0.balanceOf(address(this));
+        uint256 balance1 = token1.balanceOf(address(this));
+        (, int24 tick, , , , , ) = pool.slot0();
+        emit Rebalance(tick, balance0, balance1, totalSupply());
 
         // Update base range and place order
         baseRange = _baseRange();
@@ -232,6 +239,7 @@ contract PassiveRebalanceVault is
         // Mint shares
         _mint(to, shares);
         require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
+        emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
     function _mintLiquidity(
@@ -308,7 +316,7 @@ contract PassiveRebalanceVault is
     }
 
     /**
-     * @notice Calculates total holdings of `token0` and `token1`, i.e. how
+     * @notice Calculates total holdings of token0 and token1, i.e. how
      * much this vault would hold if it withdrew all its liquidity.
      */
     function getTotalAmounts() public view override returns (uint256, uint256) {
@@ -340,12 +348,28 @@ contract PassiveRebalanceVault is
         (liquidity, , , , ) = pool.positions(positionKey);
     }
 
-    /// @dev Maximum liquidity that can deposited in `range` by vault given
-    /// its balances of `token0` and `token1`
+    /// @dev Maximum liquidity that can deposited in range by vault given
+    /// its balances of token0 and token1
     function _maxLiquidity(Range memory range) internal view returns (uint128) {
         uint256 balance0 = token0.balanceOf(address(this));
         uint256 balance1 = token1.balanceOf(address(this));
         return _liquidityForAmounts(range, balance0, balance1);
+    }
+
+    function _baseRange() internal returns (Range memory) {
+        Range memory mid = _midRange();
+        return Range(mid.lower - baseThreshold, mid.upper + baseThreshold);
+    }
+
+    function _skewRange() internal returns (Range memory) {
+        Range memory mid = _midRange();
+
+        // Set range above mid if there's excess token0 left over
+        if (token0.balanceOf(address(this)) > 100) {
+            return Range(mid.upper, mid.upper + skewThreshold);
+        } else {
+            return Range(mid.lower - skewThreshold, mid.lower);
+        }
     }
 
     /// @dev Current Uniswap price in ticks, rounded down and rounded up
@@ -403,22 +427,6 @@ contract PassiveRebalanceVault is
 
         (int56[] memory tickCumulatives, uint160[] memory _) = pool.observe(secondsAgo);
         return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
-    }
-
-    function _baseRange() internal returns (Range memory) {
-        Range memory mid = _midRange();
-        return Range(mid.lower - baseThreshold, mid.upper + baseThreshold);
-    }
-
-    function _skewRange() internal returns (Range memory) {
-        Range memory mid = _midRange();
-
-        // Set range above mid if there's excess `token0` left over
-        if (token0.balanceOf(address(this)) > 100) {
-            return Range(mid.upper, mid.upper + skewThreshold);
-        } else {
-            return Range(mid.lower - skewThreshold, mid.lower);
-        }
     }
 
     /**
