@@ -5,11 +5,11 @@ pragma abicoder v2;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/upgradeable/contracts/token/ERC20/ERC20Upgradeable.sol";
 
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
@@ -19,10 +19,8 @@ import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
-// TODO: fix flipping
-// TODO: fix initial mint
+
 // TODO: return amounts from burn
-// TODO: choose name and symbol
 // TODO: events
 // TODO: fuzzing
 // TODO: add twap check
@@ -38,7 +36,7 @@ abstract contract BaseVault is
     IUniswapV3MintCallback,
     Multicall,
     SelfPermit,
-    ERC20,
+    ERC20Upgradeable,
     ReentrancyGuard
 {
     using SafeERC20 for IERC20;
@@ -74,14 +72,16 @@ abstract contract BaseVault is
      * @param _totalSupplyCap Users can't deposit if total supply would exceed
      * this limit. Value of 0 means no cap.
      */
-    constructor(
+    function initialize(
         address _pool,
         uint32 _twapDuration,
         uint256 _refreshCooldown,
         uint256 _totalSupplyCap,
         string memory name,
         string memory symbol
-    ) ERC20(name, symbol) {
+    ) public initializer {
+        __ERC20_init(name, symbol);
+
         require(_pool != address(0));
         pool = IUniswapV3Pool(_pool);
 
@@ -95,6 +95,8 @@ abstract contract BaseVault is
         totalSupplyCap = _totalSupplyCap;
 
         governance = msg.sender;
+
+        _updateBaseRange();
     }
 
     function mint(
@@ -130,24 +132,6 @@ abstract contract BaseVault is
         uint128 skewLiquidity = _liquidityForShares(skewRange, shares);
         _mintLiquidity(baseRange, baseLiquidity, msg.sender);
         _mintLiquidity(skewRange, skewLiquidity, msg.sender);
-
-        // Mint shares
-        _mint(to, shares);
-        require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
-    }
-
-    function _initialMint(
-        uint256 maxAmount0,
-        uint256 maxAmount1,
-        address to
-    ) internal returns (uint256 shares) {
-        shares = _liquidityForAmounts(baseRange, maxAmount0, maxAmount1);
-        require(shares > 0, "shares");
-        require(shares < type(uint128).max, "shares");
-
-        // Deposit liquidity into Uniswap. The initial mint only places an
-        // order in the base range and ignores the skew range.
-        _mintLiquidity(baseRange, uint128(shares), msg.sender);
 
         // Mint shares
         _mint(to, shares);
@@ -190,6 +174,24 @@ abstract contract BaseVault is
         // Check base and skew ranges aren't the same, otherwise
         // calculations would fail elsewhere
         assert(baseRange.lower != skewRange.lower || baseRange.upper != skewRange.upper);
+    }
+
+    function _initialMint(
+        uint256 maxAmount0,
+        uint256 maxAmount1,
+        address to
+    ) internal returns (uint256 shares) {
+        shares = _liquidityForAmounts(baseRange, maxAmount0, maxAmount1);
+        require(shares > 0, "shares");
+        require(shares < type(uint128).max, "shares");
+
+        // Deposit liquidity into Uniswap. The initial mint only places an
+        // order in the base range and ignores the skew range.
+        _mintLiquidity(baseRange, uint128(shares), msg.sender);
+
+        // Mint shares
+        _mint(to, shares);
+        require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
     }
 
     function _mintLiquidity(
@@ -266,11 +268,10 @@ abstract contract BaseVault is
      * much this vault would hold if it withdrew all its liquidity.
      */
     function getTotalAmounts() public view returns (uint256, uint256) {
-        (uint256 base0, uint256 base1) =
-            _amountsForLiquidity(baseRange, _deposited(baseRange));
-        (uint256 skew0, uint256 skew1) =
-            _amountsForLiquidity(skewRange, _deposited(skewRange));
-
+        uint128 baseLiquidity = _deposited(baseRange);
+        uint128 skewLiquidity = _deposited(baseRange);
+        (uint256 base0, uint256 base1) = _amountsForLiquidity(baseRange, baseLiquidity);
+        (uint256 skew0, uint256 skew1) = _amountsForLiquidity(skewRange, skewLiquidity);
         return (
             token0.balanceOf(address(this)).add(base0).add(skew0),
             token1.balanceOf(address(this)).add(base1).add(skew1)

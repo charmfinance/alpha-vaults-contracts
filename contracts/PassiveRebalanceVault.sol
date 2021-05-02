@@ -13,24 +13,25 @@ contract PassiveRebalanceVault is BaseVault {
      * @param _baseThreshold Width of base range order in ticks
      * @param _skewThreshold Width of skew range order in ticks
      */
-    constructor(
+    function initialize(
         address pool,
         uint32 twapDuration,
         uint256 refreshCooldown,
         uint256 totalSupplyCap,
+        string memory name,
+        string memory symbol,
         int24 _baseThreshold,
         int24 _skewThreshold
-    ) BaseVault(pool, twapDuration, refreshCooldown, totalSupplyCap, "Passive Rebalance Vault", "PRV") {
+    ) public initializer {
+        baseThreshold = _baseThreshold;
+        skewThreshold = _skewThreshold;
+
+        BaseVault.initialize(pool, twapDuration, refreshCooldown, totalSupplyCap, name, symbol);
+
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
         require(_skewThreshold % tickSpacing == 0, "skewThreshold");
         require(_baseThreshold > 0, "baseThreshold");
         require(_skewThreshold > 0, "skewThreshold");
-
-        baseThreshold = _baseThreshold;
-        skewThreshold = _skewThreshold;
-
-        // TODO: nasty - figure out other way to do this
-        _updateBaseRange();
     }
 
     function _baseRange() internal override returns (Range memory) {
@@ -40,7 +41,9 @@ contract PassiveRebalanceVault is BaseVault {
 
     function _skewRange() internal override returns (Range memory) {
         Range memory mid = _midRange();
-        if (token0.balanceOf(address(this)) > 0) {
+
+        // Set range above mid if there's excess `token0` left over
+        if (token0.balanceOf(address(this)) > 100) {
             return Range(mid.upper, mid.upper + skewThreshold);
         } else {
             return Range(mid.lower - skewThreshold, mid.lower);

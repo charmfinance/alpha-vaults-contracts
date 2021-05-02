@@ -4,9 +4,8 @@ from pytest import approx
 
 
 def test_constructor(PassiveRebalanceVault, pool, gov):
-    vault = gov.deploy(
-        PassiveRebalanceVault, pool, 600, 12 * 60 * 60, 100e18, 2400, 1200
-    )
+    vault = gov.deploy(PassiveRebalanceVault)
+    vault.initialize(pool, 600, 12 * 60 * 60, 100e18, "name", "symbol", 2400, 1200, {"from": gov})
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
     assert vault.token1() == pool.token1()
@@ -24,23 +23,25 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
     assert vault.baseRange() == (tick - 2400, tick + 2460)
     assert vault.skewRange() == (0, 0)
 
-    assert vault.name() == "Passive Rebalance Vault"
-    assert vault.symbol() == "PRV"
+    assert vault.name() == "name"
+    assert vault.symbol() == "symbol"
     assert vault.decimals() == 18
 
 
 def test_constructor_checks(PassiveRebalanceVault, pool, gov):
-    with reverts("baseThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 600, 23 * 60 * 60, 100e18, 2401, 1200)
-
-    with reverts("skewThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 600, 23 * 60 * 60, 100e18, 2400, 1201)
+    vault = gov.deploy(PassiveRebalanceVault)
 
     with reverts("baseThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 600, 23 * 60 * 60, 100e18, 0, 1200)
+        vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2401, 1200, {"from": gov})
 
     with reverts("skewThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 600, 23 * 60 * 60, 100e18, 2400, 0)
+        vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2400, 1201, {"from": gov})
+
+    with reverts("baseThreshold"):
+        vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 0, 1200, {"from": gov})
+
+    with reverts("skewThreshold"):
+        vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2400, 0, {"from": gov})
 
 
 @pytest.mark.parametrize(

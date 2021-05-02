@@ -1,6 +1,7 @@
 
 dependencies:
   - OpenZeppelin/openzeppelin-contracts@3.4.0
+  - OpenZeppelin/openzeppelin-contracts-upgradeable@3.4.0
   - Uniswap/uniswap-v3-core@1.0.0-rc.2
   - Uniswap/uniswap-v3-periphery@1.0.0-beta.21
 
@@ -11,6 +12,7 @@ compiler:
     version: 0.7.6
     remappings:
       - "@openzeppelin=OpenZeppelin/openzeppelin-contracts@3.4.0"
+      - "@openzeppelin/upgradeable=OpenZeppelin/openzeppelin-contracts-upgradeable@3.4.0"
       - "@uniswap/v3-core=Uniswap/uniswap-v3-core@1.0.0-rc.2"
       - "@uniswap/v3-periphery=Uniswap/uniswap-v3-periphery@1.0.0-beta.21"
 
