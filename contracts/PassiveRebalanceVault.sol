@@ -95,6 +95,7 @@ contract PassiveRebalanceVault is
         governance = msg.sender;
 
         baseRange = _baseRange();
+        skewRange = _skewRange();
 
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
         require(_skewThreshold % tickSpacing == 0, "skewThreshold");
@@ -419,7 +420,7 @@ contract PassiveRebalanceVault is
      * will move the skew order to the range [mid - r, mid] or
      * [mid + 1, mid + r + 1] depending on which token it holds more of.
      */
-    function setRebalanceThreshold(int24 _skewThreshold) external onlyGovernance {
+    function setSkewThreshold(int24 _skewThreshold) external onlyGovernance {
         require(_skewThreshold % tickSpacing == 0, "skewThreshold");
         require(_skewThreshold > 0, "skewThreshold");
         skewThreshold = _skewThreshold;

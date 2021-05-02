@@ -22,7 +22,7 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
 
     tick = pool.slot0()[1] // 60 * 60
     assert vault.baseRange() == (tick - 2400, tick + 2460)
-    assert vault.skewRange() == (0, 0)
+    assert vault.skewRange() == (tick - 1200, tick)
 
     assert vault.name() == "PassiveRebalanceVault"
     assert vault.symbol() == "PR"
@@ -473,12 +473,12 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.baseThreshold() == 4800
 
     with reverts("governance"):
-        vault.setRebalanceThreshold(0, {"from": user})
+        vault.setSkewThreshold(0, {"from": user})
     with reverts("skewThreshold"):
-        vault.setRebalanceThreshold(1201, {"from": gov})
+        vault.setSkewThreshold(1201, {"from": gov})
     with reverts("skewThreshold"):
-        vault.setRebalanceThreshold(0, {"from": gov})
-    vault.setRebalanceThreshold(600, {"from": gov})
+        vault.setSkewThreshold(0, {"from": gov})
+    vault.setSkewThreshold(600, {"from": gov})
     assert vault.skewThreshold() == 600
 
     with reverts("governance"):
