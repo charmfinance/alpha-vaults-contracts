@@ -155,15 +155,25 @@ contract PassiveRebalanceVault is
         require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
     }
 
-    function burn(uint256 shares, address to) external nonReentrant {
+    function burn(uint256 shares, address to)
+        external
+        nonReentrant
+        returns (uint256 amount0, uint256 amount1)
+    {
         require(shares > 0, "shares");
         require(to != address(0), "to");
 
         // Withdraw liquidity from Uniswap
         uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
         uint128 skewLiquidity = _liquidityForShares(skewRange, shares);
-        _burnLiquidity(baseRange, baseLiquidity, to, false);
-        _burnLiquidity(skewRange, skewLiquidity, to, false);
+        (uint256 base0, uint256 base1) =
+            _burnLiquidity(baseRange, baseLiquidity, to, false);
+        (uint256 skew0, uint256 skew1) =
+            _burnLiquidity(skewRange, skewLiquidity, to, false);
+
+        // Calculate amounts deposited
+        amount0 = base0.add(skew0);
+        amount1 = base1.add(skew1);
 
         // Burn shares
         _burn(msg.sender, shares);

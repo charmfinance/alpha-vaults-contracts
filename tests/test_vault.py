@@ -265,7 +265,8 @@ def test_burn(
     base0, skew0 = getPositions(vault)
 
     # Burn
-    vault.burn(shares, recipient, {"from": user})
+    tx = vault.burn(shares, recipient, {"from": user})
+    amount0, amount1 = tx.return_value
     assert vault.balanceOf(user) == 0
 
     # Check liquidity in pool
@@ -274,8 +275,8 @@ def test_burn(
     assert approx((totalSupply - shares) / totalSupply) == skew1[0] / skew0[0]
 
     # Check recipient has received tokens
-    assert tokens[0].balanceOf(recipient) > balance0
-    assert tokens[1].balanceOf(recipient) > balance1
+    assert tokens[0].balanceOf(recipient) - balance0 == amount0 > 0
+    assert tokens[1].balanceOf(recipient) - balance1 == amount1 > 0
 
 
 def test_refresh_when_empty_then_mint(
