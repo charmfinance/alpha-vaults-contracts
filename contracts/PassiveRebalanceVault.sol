@@ -19,6 +19,8 @@ import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
+import "../interfaces/IVault.sol";
+
 // TODO: return amounts from burn
 // TODO: events
 // TODO: fuzzing
@@ -29,6 +31,7 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
  * @notice  A vault that provides liquidity on Uniswap V3 on behalf of users
  */
 contract PassiveRebalanceVault is
+    IVault,
     IUniswapV3MintCallback,
     Multicall,
     SelfPermit,
@@ -109,6 +112,7 @@ contract PassiveRebalanceVault is
         address to
     )
         external
+        override
         returns (
             uint256 shares,
             uint256 amount0,
@@ -146,17 +150,18 @@ contract PassiveRebalanceVault is
         (uint256 skew0, uint256 skew1) =
             _mintLiquidity(skewRange, skewLiquidity, msg.sender);
 
-        // Calculate amounts deposited
-        amount0 = base0.add(skew0);
-        amount1 = base1.add(skew1);
-
         // Mint shares
         _mint(to, shares);
         require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
+
+        // Return amounts deposited
+        amount0 = base0.add(skew0);
+        amount1 = base1.add(skew1);
     }
 
     function burn(uint256 shares, address to)
         external
+        override
         nonReentrant
         returns (uint256 amount0, uint256 amount1)
     {
@@ -171,15 +176,15 @@ contract PassiveRebalanceVault is
         (uint256 skew0, uint256 skew1) =
             _burnLiquidity(skewRange, skewLiquidity, to, false);
 
-        // Calculate amounts deposited
-        amount0 = base0.add(skew0);
-        amount1 = base1.add(skew1);
-
         // Burn shares
         _burn(msg.sender, shares);
+
+        // Return amounts withdrawn
+        amount0 = base0.add(skew0);
+        amount1 = base1.add(skew1);
     }
 
-    function refresh() external {
+    function refresh() external override {
         require(keeper == address(0) || msg.sender == keeper, "keeper");
         require(block.timestamp >= lastUpdate.add(refreshCooldown), "cooldown");
         lastUpdate = block.timestamp;
@@ -305,7 +310,7 @@ contract PassiveRebalanceVault is
      * @notice Calculates total holdings of `token0` and `token1`, i.e. how
      * much this vault would hold if it withdrew all its liquidity.
      */
-    function getTotalAmounts() public view returns (uint256, uint256) {
+    function getTotalAmounts() public view override returns (uint256, uint256) {
         uint128 baseLiquidity = _deposited(baseRange);
         uint128 skewLiquidity = _deposited(skewRange);
         (uint256 base0, uint256 base1) = _amountsForLiquidity(baseRange, baseLiquidity);
