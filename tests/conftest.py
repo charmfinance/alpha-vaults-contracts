@@ -74,8 +74,7 @@ def tokens(MockToken, pool):
 @pytest.fixture
 def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
     vault = gov.deploy(PassiveRebalanceVault)
-    vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2400, 1200
-    )
+    vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2400, 1200)
 
     for u in users:
         tokens[0].approve(vault, 100e18, {"from": u})

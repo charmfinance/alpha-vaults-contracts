@@ -19,7 +19,6 @@ import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
-
 // TODO: return amounts from burn
 // TODO: events
 // TODO: fuzzing
@@ -103,7 +102,14 @@ abstract contract BaseVault is
         uint256 maxAmount0,
         uint256 maxAmount1,
         address to
-    ) external returns (uint256 shares) {
+    )
+        external
+        returns (
+            uint256 shares,
+            uint256 amount0,
+            uint256 amount1
+        )
+    {
         require(to != address(0), "to");
 
         uint256 _totalSupply = totalSupply();
@@ -130,8 +136,14 @@ abstract contract BaseVault is
         // Deposit liquidity into Uniswap
         uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
         uint128 skewLiquidity = _liquidityForShares(skewRange, shares);
-        _mintLiquidity(baseRange, baseLiquidity, msg.sender);
-        _mintLiquidity(skewRange, skewLiquidity, msg.sender);
+        (uint256 base0, uint256 base1) =
+            _mintLiquidity(baseRange, baseLiquidity, msg.sender);
+        (uint256 skew0, uint256 skew1) =
+            _mintLiquidity(skewRange, skewLiquidity, msg.sender);
+
+        // Calculate amounts deposited
+        amount0 = base0.add(skew0);
+        amount1 = base1.add(skew1);
 
         // Mint shares
         _mint(to, shares);
@@ -180,14 +192,21 @@ abstract contract BaseVault is
         uint256 maxAmount0,
         uint256 maxAmount1,
         address to
-    ) internal returns (uint256 shares) {
+    )
+        internal
+        returns (
+            uint256 shares,
+            uint256 amount0,
+            uint256 amount1
+        )
+    {
         shares = _liquidityForAmounts(baseRange, maxAmount0, maxAmount1);
         require(shares > 0, "shares");
         require(shares < type(uint128).max, "shares");
 
         // Deposit liquidity into Uniswap. The initial mint only places an
         // order in the base range and ignores the skew range.
-        _mintLiquidity(baseRange, uint128(shares), msg.sender);
+        (amount0, amount1) = _mintLiquidity(baseRange, uint128(shares), msg.sender);
 
         // Mint shares
         _mint(to, shares);
@@ -198,11 +217,17 @@ abstract contract BaseVault is
         Range memory range,
         uint128 liquidity,
         address payer
-    ) internal {
-        if (liquidity == 0) {
-            return;
+    ) internal returns (uint256, uint256) {
+        if (liquidity > 0) {
+            return
+                pool.mint(
+                    address(this),
+                    range.lower,
+                    range.upper,
+                    liquidity,
+                    abi.encode(payer)
+                );
         }
-        pool.mint(address(this), range.lower, range.upper, liquidity, abi.encode(payer));
     }
 
     function _burnLiquidity(
@@ -210,20 +235,18 @@ abstract contract BaseVault is
         uint128 liquidity,
         address to,
         bool collectAll
-    ) internal {
-        if (liquidity == 0) {
-            return;
-        }
+    ) internal returns (uint256, uint256) {
+        if (liquidity > 0) {
+            // Burn liquidity
+            (uint256 amount0, uint256 amount1) =
+                pool.burn(range.lower, range.upper, liquidity);
 
-        // Burn liquidity
-        (uint256 amount0, uint256 amount1) =
-            pool.burn(range.lower, range.upper, liquidity);
-
-        // Collect amount owed
-        uint128 collect0 = collectAll ? type(uint128).max : uint128(amount0);
-        uint128 collect1 = collectAll ? type(uint128).max : uint128(amount1);
-        if (collect0 > 0 || collect1 > 0) {
-            pool.collect(to, range.lower, range.upper, collect0, collect1);
+            // Collect amount owed
+            uint128 collect0 = collectAll ? type(uint128).max : uint128(amount0);
+            uint128 collect1 = collectAll ? type(uint128).max : uint128(amount1);
+            if (collect0 > 0 || collect1 > 0) {
+                return pool.collect(to, range.lower, range.upper, collect0, collect1);
+            }
         }
     }
 
@@ -269,7 +292,7 @@ abstract contract BaseVault is
      */
     function getTotalAmounts() public view returns (uint256, uint256) {
         uint128 baseLiquidity = _deposited(baseRange);
-        uint128 skewLiquidity = _deposited(baseRange);
+        uint128 skewLiquidity = _deposited(skewRange);
         (uint256 base0, uint256 base1) = _amountsForLiquidity(baseRange, baseLiquidity);
         (uint256 skew0, uint256 skew1) = _amountsForLiquidity(skewRange, skewLiquidity);
         return (

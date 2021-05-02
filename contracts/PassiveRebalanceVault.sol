@@ -26,7 +26,14 @@ contract PassiveRebalanceVault is BaseVault {
         baseThreshold = _baseThreshold;
         skewThreshold = _skewThreshold;
 
-        BaseVault.initialize(pool, twapDuration, refreshCooldown, totalSupplyCap, name, symbol);
+        BaseVault.initialize(
+            pool,
+            twapDuration,
+            refreshCooldown,
+            totalSupplyCap,
+            name,
+            symbol
+        );
 
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
         require(_skewThreshold % tickSpacing == 0, "skewThreshold");

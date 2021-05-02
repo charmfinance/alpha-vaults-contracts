@@ -5,7 +5,9 @@ from pytest import approx
 
 def test_constructor(PassiveRebalanceVault, pool, gov):
     vault = gov.deploy(PassiveRebalanceVault)
-    vault.initialize(pool, 600, 12 * 60 * 60, 100e18, "name", "symbol", 2400, 1200, {"from": gov})
+    vault.initialize(
+        pool, 600, 12 * 60 * 60, 100e18, "name", "symbol", 2400, 1200, {"from": gov}
+    )
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
     assert vault.token1() == pool.token1()
@@ -32,16 +34,24 @@ def test_constructor_checks(PassiveRebalanceVault, pool, gov):
     vault = gov.deploy(PassiveRebalanceVault)
 
     with reverts("baseThreshold"):
-        vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2401, 1200, {"from": gov})
+        vault.initialize(
+            pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2401, 1200, {"from": gov}
+        )
 
     with reverts("skewThreshold"):
-        vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2400, 1201, {"from": gov})
+        vault.initialize(
+            pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2400, 1201, {"from": gov}
+        )
 
     with reverts("baseThreshold"):
-        vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 0, 1200, {"from": gov})
+        vault.initialize(
+            pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 0, 1200, {"from": gov}
+        )
 
     with reverts("skewThreshold"):
-        vault.initialize(pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2400, 0, {"from": gov})
+        vault.initialize(
+            pool, 600, 23 * 60 * 60, 100e18, "name", "symbol", 2400, 0, {"from": gov}
+        )
 
 
 @pytest.mark.parametrize(
@@ -57,21 +67,21 @@ def test_mint_initial(
 
     # Mint
     tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
-    shares = tx.return_value
+    shares, amount0, amount1 = tx.return_value
 
-    # Check shares
+    # Check return values
     assert shares == vault.balanceOf(recipient) > 0
+    assert amount0 == balance0 - tokens[0].balanceOf(user)
+    assert amount1 == balance1 - tokens[1].balanceOf(user)
 
     # Check spent right amount
-    dbalance0 = balance0 - tokens[0].balanceOf(user)
-    dbalance1 = balance1 - tokens[1].balanceOf(user)
-    zeroTight = dbalance0 / maxAmount0 > dbalance1 / maxAmount1
+    zeroTight = amount0 / maxAmount0 > amount1 / maxAmount1
     if zeroTight:
-        assert dbalance0 == maxAmount0
-        assert dbalance1 < maxAmount1
+        assert amount0 == maxAmount0
+        assert amount1 < maxAmount1
     else:
-        assert dbalance0 < maxAmount0
-        assert dbalance1 == maxAmount1
+        assert amount0 < maxAmount0
+        assert amount1 == maxAmount1
 
 
 def test_mint_initial_checks(vault, user, recipient):
@@ -108,25 +118,25 @@ def test_mint_existing(
 
     # Mint
     tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
-    shares = tx.return_value
+    shares, amount0, amount1 = tx.return_value
 
-    # Check shares
+    # Check return values
     assert shares == vault.balanceOf(recipient) > 0
+    assert amount0 == balance0 - tokens[0].balanceOf(user)
+    assert amount1 == balance1 - tokens[1].balanceOf(user)
 
     # Check spent right amount
-    dbalance0 = balance0 - tokens[0].balanceOf(user)
-    dbalance1 = balance1 - tokens[1].balanceOf(user)
-    zeroTight = dbalance0 / maxAmount0 > dbalance1 / maxAmount1
+    zeroTight = amount0 / maxAmount0 > amount1 / maxAmount1
     if zeroTight:
         # Max amount 0 is the tight constraint
-        assert approx(dbalance0, abs=3) == maxAmount0
-        assert dbalance0 <= maxAmount0
-        assert dbalance1 <= maxAmount1
+        assert approx(amount0, abs=3) == maxAmount0
     else:
         # Max amount 1 is the tight constraint
-        assert approx(dbalance1, abs=3) == maxAmount1
-        assert dbalance0 <= maxAmount0
-        assert dbalance1 <= maxAmount1
+        assert approx(amount1, abs=3) == maxAmount1
+
+    # Check amounts are less than max
+    assert amount0 <= maxAmount0
+    assert amount1 <= maxAmount1
 
     # Check liquidity and balances are in proportion
     base1, skew1 = getPositions(vault)
@@ -161,17 +171,17 @@ def test_mint_existing_when_price_up(
 
     # Mint
     tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
-    shares = tx.return_value
+    shares, amount0, amount1 = tx.return_value
 
-    # Check shares
+    # Check return values
     assert shares == vault.balanceOf(recipient) > 0
+    assert amount0 == balance0 - tokens[0].balanceOf(user)
+    assert amount1 == balance1 - tokens[1].balanceOf(user)
 
     # Check spent right amount
-    dbalance0 = balance0 - tokens[0].balanceOf(user)
-    dbalance1 = balance1 - tokens[1].balanceOf(user)
-    assert approx(dbalance1, rel=1e-5, abs=10) == maxAmount1
-    assert dbalance0 < 10
-    assert dbalance1 <= maxAmount1
+    assert approx(amount1, rel=1e-5, abs=10) == maxAmount1
+    assert amount0 < 10
+    assert amount1 <= maxAmount1
 
     # Check liquidity and balances are in proportion
     base1, skew1 = getPositions(vault)
@@ -206,17 +216,17 @@ def test_mint_existing_when_price_down(
 
     # Mint
     tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
-    shares = tx.return_value
+    shares, amount0, amount1 = tx.return_value
 
-    # Check shares
+    # Check return values
     assert shares == vault.balanceOf(recipient) > 0
+    assert amount0 == balance0 - tokens[0].balanceOf(user)
+    assert amount1 == balance1 - tokens[1].balanceOf(user)
 
     # Check spent right amount
-    dbalance0 = balance0 - tokens[0].balanceOf(user)
-    dbalance1 = balance1 - tokens[1].balanceOf(user)
-    assert approx(dbalance0, abs=10) == maxAmount0
-    assert dbalance0 <= maxAmount0
-    assert dbalance1 == 0
+    assert approx(amount0, abs=10) == maxAmount0
+    assert amount0 <= maxAmount0
+    assert amount1 == 0
 
     # Check liquidity and balances are in proportion
     base1, skew1 = getPositions(vault)
@@ -256,7 +266,7 @@ def test_burn(
 
     # Mint and refresh
     tx = vault.mint(1e6, 1e8, user, {"from": user})
-    shares = tx.return_value
+    shares, _, _ = tx.return_value
     vault.refresh({"from": gov})
 
     # Store balances, supply and positions
@@ -290,7 +300,6 @@ def test_refresh_when_empty_then_mint(
     vault.refresh({"from": gov})
 
     tx = vault.mint(1e6, 1e8, user, {"from": user})
-    shares = tx.return_value
 
     # Check liquidity in pool
     base, rebalance = getPositions(vault)
@@ -305,7 +314,7 @@ def test_burn_all(vault, pool, tokens, getPositions, gov, user, recipient):
 
     # Mint
     tx = vault.mint(1e17, 1e19, gov, {"from": gov})
-    shares = tx.return_value
+    shares, _, _ = tx.return_value
 
     # Refresh
     vault.refresh({"from": gov})
@@ -377,15 +386,12 @@ def test_values(vaultAfterPriceMove, tokens, user, recipient, maxAmount0, maxAmo
     total0, total1 = vault.getTotalAmounts()
 
     # Mint some liquidity
-    vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
+    tx = vault.mint(maxAmount0, maxAmount1, recipient, {"from": user})
+    _, amount0, amount1 = tx.return_value
 
     # Check amounts match values
-    dbalance0 = balance0 - tokens[0].balanceOf(user)
-    dbalance1 = balance1 - tokens[1].balanceOf(user)
-    damount0 = vault.getTotalAmounts()[0] - total0
-    damount1 = vault.getTotalAmounts()[1] - total1
-    assert approx(dbalance0, abs=1) == damount0
-    assert approx(dbalance1, abs=1) == damount1
+    assert approx(amount0, abs=1) == vault.getTotalAmounts()[0] - total0
+    assert approx(amount1, abs=1) == vault.getTotalAmounts()[1] - total1
 
 
 @pytest.mark.parametrize(
