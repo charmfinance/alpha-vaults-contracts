@@ -97,7 +97,7 @@ def vaultAfterPriceMove(vault, pool, router, gov):
     assert tick != prevTick
 
     # Refresh vault
-    vault.refresh({"from": gov})
+    vault.rebalance({"from": gov})
 
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)
@@ -113,7 +113,7 @@ def vaultAfterPriceDown(vault, pool, router, gov):
     router.swap(pool, True, 1e18, {"from": gov})  # True means swap token0 -> token1
 
     # Refresh vault
-    vault.refresh({"from": gov})
+    vault.rebalance({"from": gov})
 
     # Check vault holds only token0
     total0, total1 = vault.getTotalAmounts()
@@ -134,7 +134,7 @@ def vaultAfterPriceUp(vault, pool, router, gov):
     router.swap(pool, False, 1e20, {"from": gov})  # False means swap token1 -> token0
 
     # Refresh vault
-    vault.refresh({"from": gov})
+    vault.rebalance({"from": gov})
 
     # Check vault holds only token0
     total0, total1 = vault.getTotalAmounts()

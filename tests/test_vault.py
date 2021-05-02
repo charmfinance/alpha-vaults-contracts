@@ -16,7 +16,7 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
     assert vault.baseThreshold() == 2400
     assert vault.skewThreshold() == 1200
     assert vault.twapDuration() == 600
-    assert vault.refreshCooldown() == 12 * 60 * 60
+    assert vault.rebalanceCooldown() == 12 * 60 * 60
     assert vault.totalSupplyCap() == 100e18
     assert vault.governance() == gov
 
@@ -253,10 +253,10 @@ def test_burn(
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)
 
-    # Mint and refresh
+    # Mint and rebalance
     tx = vault.mint(1e6, 1e8, user, {"from": user})
     shares, _, _ = tx.return_value
-    vault.refresh({"from": gov})
+    vault.rebalance({"from": gov})
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(recipient)
@@ -279,15 +279,15 @@ def test_burn(
     assert tokens[1].balanceOf(recipient) - balance1 == amount1 > 0
 
 
-def test_refresh_when_empty_then_mint(
+def test_rebalance_when_empty_then_mint(
     vault, pool, tokens, getPositions, gov, user, recipient
 ):
 
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)
 
-    # Refresh
-    vault.refresh({"from": gov})
+    # Rebalance
+    vault.rebalance({"from": gov})
 
     tx = vault.mint(1e6, 1e8, user, {"from": user})
 
@@ -306,8 +306,8 @@ def test_burn_all(vault, pool, tokens, getPositions, gov, user, recipient):
     tx = vault.mint(1e17, 1e19, gov, {"from": gov})
     shares, _, _ = tx.return_value
 
-    # Refresh
-    vault.refresh({"from": gov})
+    # Rebalance
+    vault.rebalance({"from": gov})
 
     # Burn all
     vault.burn(shares, gov, {"from": gov})
@@ -328,7 +328,7 @@ def test_balances_when_empty():
 
 @pytest.mark.parametrize("buy", [False, True])
 @pytest.mark.parametrize("big", [False, True])
-def test_refresh(vault, pool, tokens, router, getPositions, gov, user, buy, big):
+def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, big):
 
     # Mint some liquidity
     vault.mint(1e17, 1e19, gov, {"from": gov})
@@ -338,7 +338,7 @@ def test_refresh(vault, pool, tokens, router, getPositions, gov, user, buy, big)
     router.swap(pool, buy, qty, {"from": gov})
 
     # Rebalance
-    vault.refresh({"from": gov})
+    vault.rebalance({"from": gov})
 
     # Check ranges are set correctly
     tick = pool.slot0()[1] // 60 * 60
@@ -423,7 +423,7 @@ def test_values_per_share_do_not_increase(
 
 @pytest.mark.parametrize("buy", [False, True])
 @pytest.mark.parametrize("big", [False, True])
-def test_values_do_not_change_after_refresh(
+def test_values_do_not_change_after_rebalance(
     vault, pool, tokens, router, getPositions, gov, user, buy, big
 ):
 
@@ -436,7 +436,7 @@ def test_values_do_not_change_after_refresh(
 
     # Rebalance
     total0, total1 = vault.getTotalAmounts()
-    vault.refresh({"from": gov})
+    vault.rebalance({"from": gov})
 
     # Check values haven't changed - they should only increase a bit due to fees earned
     newTotal0, newTotal1 = vault.getTotalAmounts()
@@ -451,16 +451,16 @@ def test_values_do_not_change_after_refresh(
 
 
 def test_update_cooldown(vault, gov):
-    vault.refresh({"from": gov})
+    vault.rebalance({"from": gov})
 
-    # After 22 hours, cannot refresh yet
+    # After 22 hours, cannot rebalance yet
     chain.sleep(22 * 60 * 60)
     with reverts("cooldown"):
-        vault.refresh({"from": gov})
+        vault.rebalance({"from": gov})
 
-    # After another 2 hours, refresh works
+    # After another 2 hours, rebalance works
     chain.sleep(2 * 60 * 60)
-    vault.refresh({"from": gov})
+    vault.rebalance({"from": gov})
 
 
 def test_governance_methods(vault, tokens, gov, user, recipient):
@@ -488,9 +488,9 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.twapDuration() == 800
 
     with reverts("governance"):
-        vault.setRefreshCooldown(12 * 60 * 60, {"from": user})
-    vault.setRefreshCooldown(12 * 60 * 60, {"from": gov})
-    assert vault.refreshCooldown() == 12 * 60 * 60
+        vault.setRebalanceCooldown(12 * 60 * 60, {"from": user})
+    vault.setRebalanceCooldown(12 * 60 * 60, {"from": gov})
+    assert vault.rebalanceCooldown() == 12 * 60 * 60
 
     with reverts("governance"):
         vault.setTotalSupplyCap(0, {"from": user})

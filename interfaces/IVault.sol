@@ -17,7 +17,7 @@ interface IVault {
 
     function burn(uint256, address) external returns (uint256, uint256);
 
-    function refresh() external;
+    function rebalance() external;
 
     function getTotalAmounts() external view returns (uint256, uint256);
 }

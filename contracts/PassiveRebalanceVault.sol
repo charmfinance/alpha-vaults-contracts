@@ -55,7 +55,7 @@ contract PassiveRebalanceVault is
     int24 public baseThreshold;
     int24 public skewThreshold;
     uint32 public twapDuration;
-    uint256 public refreshCooldown;
+    uint256 public rebalanceCooldown;
     uint256 public totalSupplyCap;
 
     Range public baseRange;
@@ -70,7 +70,7 @@ contract PassiveRebalanceVault is
      * @param _pool Underlying Uniswap V3 pool
      * @param _baseThreshold Width of base range order in ticks
      * @param _skewThreshold Width of skew range order in ticks
-     * @param _refreshCooldown How much time needs to pass between `refresh()`
+     * @param _rebalanceCooldown How much time needs to pass between `rebalance()`
      * calls in seconds
      * @param _totalSupplyCap Users can't deposit if total supply would exceed
      * this limit. Value of 0 means no cap.
@@ -80,7 +80,7 @@ contract PassiveRebalanceVault is
         int24 _baseThreshold,
         int24 _skewThreshold,
         uint32 _twapDuration,
-        uint256 _refreshCooldown,
+        uint256 _rebalanceCooldown,
         uint256 _totalSupplyCap
     ) ERC20("PassiveRebalanceVault", "PR") {
         require(_pool != address(0));
@@ -93,7 +93,7 @@ contract PassiveRebalanceVault is
         baseThreshold = _baseThreshold;
         skewThreshold = _skewThreshold;
         twapDuration = _twapDuration;
-        refreshCooldown = _refreshCooldown;
+        rebalanceCooldown = _rebalanceCooldown;
         totalSupplyCap = _totalSupplyCap;
         governance = msg.sender;
 
@@ -184,9 +184,9 @@ contract PassiveRebalanceVault is
         amount1 = base1.add(skew1);
     }
 
-    function refresh() external override {
+    function rebalance() external override {
         require(keeper == address(0) || msg.sender == keeper, "keeper");
-        require(block.timestamp >= lastUpdate.add(refreshCooldown), "cooldown");
+        require(block.timestamp >= lastUpdate.add(rebalanceCooldown), "cooldown");
         lastUpdate = block.timestamp;
 
         // TODO: check twap matches
@@ -226,7 +226,8 @@ contract PassiveRebalanceVault is
 
         // Deposit liquidity into Uniswap. The initial mint only places an
         // order in the base range and ignores the skew range.
-        (amount0, amount1) = _mintLiquidity(baseRange, uint128(shares), msg.sender);
+        (amount0, amount1) =
+            _mintLiquidity(baseRange, uint128(shares), msg.sender);
 
         // Mint shares
         _mint(to, shares);
@@ -421,7 +422,7 @@ contract PassiveRebalanceVault is
     }
 
     /**
-     * @notice Set base threshold b. From the next refresh, the strategy will
+     * @notice Set base threshold b. From the next rebalance, the strategy will
      * move the base order to the range [mid - b, mid + b + 1].
      */
     function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {
@@ -431,7 +432,7 @@ contract PassiveRebalanceVault is
     }
 
     /**
-     * @notice Set skew threshold r. From the next refresh, the strategy
+     * @notice Set skew threshold r. From the next rebalance, the strategy
      * will move the skew order to the range [mid - r, mid] or
      * [mid + 1, mid + r + 1] depending on which token it holds more of.
      */
@@ -442,11 +443,11 @@ contract PassiveRebalanceVault is
     }
 
     /**
-     * @notice Set refresh cooldown - the number of seconds that need to pass
-     * since the last refresh before refresh() can be called again.
+     * @notice Set rebalance cooldown - the number of seconds that need to pass
+     * since the last rebalance before rebalance() can be called again.
      */
-    function setRefreshCooldown(uint256 _refreshCooldown) external onlyGovernance {
-        refreshCooldown = _refreshCooldown;
+    function setRebalanceCooldown(uint256 _rebalanceCooldown) external onlyGovernance {
+        rebalanceCooldown = _rebalanceCooldown;
     }
 
     function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
@@ -471,8 +472,8 @@ contract PassiveRebalanceVault is
     }
 
     /**
-     * @notice Set keeper. If set, refresh() can only be called by the keeper.
-     * If equal to address zero, refresh() can be called by any account.
+     * @notice Set keeper. If set, rebalance() can only be called by the keeper.
+     * If equal to address zero, rebalance() can be called by any account.
      */
     function setKeeper(address _keeper) external onlyGovernance {
         keeper = _keeper;
