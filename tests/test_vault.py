@@ -5,7 +5,7 @@ from pytest import approx
 
 def test_constructor(PassiveRebalanceVault, pool, gov):
     vault = gov.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 600, 12 * 60 * 60, 100e18
+        PassiveRebalanceVault, pool, 600, 12 * 60 * 60, 100e18, 2400, 1200
     )
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
@@ -31,16 +31,16 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
 
 def test_constructor_checks(PassiveRebalanceVault, pool, gov):
     with reverts("baseThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 2401, 1200, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 600, 23 * 60 * 60, 100e18, 2401, 1200)
 
     with reverts("skewThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 2400, 1201, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 600, 23 * 60 * 60, 100e18, 2400, 1201)
 
     with reverts("baseThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 0, 1200, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 600, 23 * 60 * 60, 100e18, 0, 1200)
 
     with reverts("skewThreshold"):
-        gov.deploy(PassiveRebalanceVault, pool, 2400, 0, 600, 23 * 60 * 60, 100e18)
+        gov.deploy(PassiveRebalanceVault, pool, 600, 23 * 60 * 60, 100e18, 2400, 0)
 
 
 @pytest.mark.parametrize(

@@ -4,8 +4,8 @@ pragma solidity 0.7.6;
 pragma abicoder v2;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/drafts/ERC20Permit.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
@@ -19,7 +19,6 @@ import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
-// TODO: change constructor order
 // TODO: fix flipping
 // TODO: fix initial mint
 // TODO: return amounts from burn
@@ -39,7 +38,7 @@ abstract contract BaseVault is
     IUniswapV3MintCallback,
     Multicall,
     SelfPermit,
-    ERC20Permit,
+    ERC20,
     ReentrancyGuard
 {
     using SafeERC20 for IERC20;
@@ -79,8 +78,10 @@ abstract contract BaseVault is
         address _pool,
         uint32 _twapDuration,
         uint256 _refreshCooldown,
-        uint256 _totalSupplyCap
-    ) ERC20("Passive Rebalance Vault", "PRV") ERC20Permit("Passive Rebalance Vault") {
+        uint256 _totalSupplyCap,
+        string memory name,
+        string memory symbol
+    ) ERC20(name, symbol) {
         require(_pool != address(0));
         pool = IUniswapV3Pool(_pool);
 

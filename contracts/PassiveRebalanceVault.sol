@@ -10,22 +10,17 @@ contract PassiveRebalanceVault is BaseVault {
     int24 public skewThreshold;
 
     /**
-     * @param _pool Uniswap V3 pool
      * @param _baseThreshold Width of base range order in ticks
      * @param _skewThreshold Width of skew range order in ticks
-     * @param _refreshCooldown How much time needs to pass between refresh()
-     * calls in seconds
-     * @param _totalSupplyCap Users can't deposit if total supply would exceed
-     * this limit. Value of 0 means no cap.
      */
     constructor(
-        address _pool,
+        address pool,
+        uint32 twapDuration,
+        uint256 refreshCooldown,
+        uint256 totalSupplyCap,
         int24 _baseThreshold,
-        int24 _skewThreshold,
-        uint32 _twapDuration,
-        uint256 _refreshCooldown,
-        uint256 _totalSupplyCap
-    ) BaseVault(_pool, _twapDuration, _refreshCooldown, _totalSupplyCap) {
+        int24 _skewThreshold
+    ) BaseVault(pool, twapDuration, refreshCooldown, totalSupplyCap, "Passive Rebalance Vault", "PRV") {
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
         require(_skewThreshold % tickSpacing == 0, "skewThreshold");
         require(_baseThreshold > 0, "baseThreshold");
