@@ -5,15 +5,14 @@ pragma abicoder v2;
 
 import "./BaseVault.sol";
 
-
 contract PassiveRebalanceVault is BaseVault {
     int24 public baseThreshold;
-    int24 public rebalanceThreshold;
+    int24 public skewThreshold;
 
     /**
      * @param _pool Uniswap V3 pool
      * @param _baseThreshold Width of base range order in ticks
-     * @param _rebalanceThreshold Width of rebalance range order in ticks
+     * @param _skewThreshold Width of skew range order in ticks
      * @param _refreshCooldown How much time needs to pass between refresh()
      * calls in seconds
      * @param _totalSupplyCap Users can't deposit if total supply would exceed
@@ -22,33 +21,34 @@ contract PassiveRebalanceVault is BaseVault {
     constructor(
         address _pool,
         int24 _baseThreshold,
-        int24 _rebalanceThreshold,
+        int24 _skewThreshold,
         uint32 _twapDuration,
         uint256 _refreshCooldown,
         uint256 _totalSupplyCap
-    ) BaseVault (_pool, _twapDuration, _refreshCooldown, _totalSupplyCap) {
+    ) BaseVault(_pool, _twapDuration, _refreshCooldown, _totalSupplyCap) {
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
-        require(_rebalanceThreshold % tickSpacing == 0, "rebalanceThreshold");
+        require(_skewThreshold % tickSpacing == 0, "skewThreshold");
         require(_baseThreshold > 0, "baseThreshold");
-        require(_rebalanceThreshold > 0, "rebalanceThreshold");
+        require(_skewThreshold > 0, "skewThreshold");
 
         baseThreshold = _baseThreshold;
-        rebalanceThreshold = _rebalanceThreshold;
+        skewThreshold = _skewThreshold;
 
+        // TODO: nasty - figure out other way to do this
         _updateBaseRange();
     }
 
     function _baseRange() internal override returns (Range memory) {
         Range memory mid = _midRange();
-        return Range(mid.tickLower - baseThreshold, mid.tickUpper + baseThreshold);
+        return Range(mid.lower - baseThreshold, mid.upper + baseThreshold);
     }
 
-    function _rebalanceRange() internal override returns (Range memory) {
+    function _skewRange() internal override returns (Range memory) {
         Range memory mid = _midRange();
         if (token0.balanceOf(address(this)) > 0) {
-            return Range(mid.tickUpper, mid.tickUpper + rebalanceThreshold);
+            return Range(mid.upper, mid.upper + skewThreshold);
         } else {
-            return Range(mid.tickLower - rebalanceThreshold, mid.tickLower);
+            return Range(mid.lower - skewThreshold, mid.lower);
         }
     }
 
@@ -63,13 +63,13 @@ contract PassiveRebalanceVault is BaseVault {
     }
 
     /**
-     * @notice Set rebalance threshold r. From the next refresh, the strategy
-     * will move the rebalance order to the range [mid - r, mid] or
+     * @notice Set skew threshold r. From the next refresh, the strategy
+     * will move the skew order to the range [mid - r, mid] or
      * [mid + 1, mid + r + 1] depending on which token it holds more of.
      */
-    function setRebalanceThreshold(int24 _rebalanceThreshold) external onlyGovernance {
-        require(_rebalanceThreshold % tickSpacing == 0, "rebalanceThreshold");
-        require(_rebalanceThreshold > 0, "rebalanceThreshold");
-        rebalanceThreshold = _rebalanceThreshold;
+    function setRebalanceThreshold(int24 _skewThreshold) external onlyGovernance {
+        require(_skewThreshold % tickSpacing == 0, "skewThreshold");
+        require(_skewThreshold > 0, "skewThreshold");
+        skewThreshold = _skewThreshold;
     }
 }

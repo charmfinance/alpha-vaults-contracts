@@ -151,7 +151,7 @@ def vaultAfterPriceUp(vault, pool, router, gov):
 def getPositions(pool, helper):
     def f(vault):
         (b0, b1) = vault.baseRange()
-        (r0, r1) = vault.rebalanceRange()
+        (r0, r1) = vault.skewRange()
         bkey = helper.computePositionKey(vault, b0, b1)
         rkey = helper.computePositionKey(vault, r0, r1)
         return pool.positions(bkey), pool.positions(rkey)
@@ -163,7 +163,7 @@ def getPositions(pool, helper):
 def debug(pool, tokens, helper):
     def f(vault):
         (b0, b1) = vault.baseRange()
-        (r0, r1) = vault.rebalanceRange()
+        (r0, r1) = vault.skewRange()
         bkey = helper.computePositionKey(vault, b0, b1)
         rkey = helper.computePositionKey(vault, r0, r1)
         print(f"Passive position:    {pool.positions(bkey)}")

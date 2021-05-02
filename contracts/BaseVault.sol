@@ -13,33 +13,41 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "@uniswap/v3-core/contracts/libraries/Position.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/base/Multicall.sol";
 import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
+// TODO: change constructor order
+// TODO: fix flipping
+// TODO: fix initial mint
+// TODO: return amounts from burn
 // TODO: choose name and symbol
 // TODO: events
 // TODO: fuzzing
 // TODO: add twap check
-// TODO: return amounts from burn
-
 
 /**
  * @title   Base Vault
- * @notice  A vault that makes it easy for users to provide liquidity on
- *          Uniswap V3 in a smart way.
+ * @notice  A vault that provides liquidity on Uniswap V3 on behalf of users
+ * @dev     To use, inherit from this contract and override `_baseRange()`
+ *          and `_skewRange()`. These methods should return the tick ranges
+ *          for the vault's range orders.
  */
-abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ERC20Permit, ReentrancyGuard {
+abstract contract BaseVault is
+    IUniswapV3MintCallback,
+    Multicall,
+    SelfPermit,
+    ERC20Permit,
+    ReentrancyGuard
+{
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
-    using Position for mapping(bytes32 => Position.Info);
 
     struct Range {
-        int24 tickLower;
-        int24 tickUpper;
+        int24 lower;
+        int24 upper;
     }
 
     IUniswapV3Pool public pool;
@@ -53,7 +61,7 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
     uint256 public totalSupplyCap;
 
     Range public baseRange;
-    Range public rebalanceRange;
+    Range public skewRange;
 
     address public governance;
     address public pendingGovernance;
@@ -61,8 +69,8 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
     uint256 public lastUpdate;
 
     /**
-     * @param _pool Uniswap V3 pool
-     * @param _refreshCooldown How much time needs to pass between refresh()
+     * @param _pool Underlying Uniswap V3 pool
+     * @param _refreshCooldown How much time needs to pass between `refresh()`
      * calls in seconds
      * @param _totalSupplyCap Users can't deposit if total supply would exceed
      * this limit. Value of 0 means no cap.
@@ -101,29 +109,28 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
         }
 
         // Decrease slightly so amounts don't exceed max
-        maxAmount0 = maxAmount0 >= 2 ? maxAmount0.sub(2) : maxAmount0;
-        maxAmount1 = maxAmount1 >= 2 ? maxAmount1.sub(2) : maxAmount1;
+        maxAmount0 = maxAmount0 >= 2 ? maxAmount0 - 2 : maxAmount0;
+        maxAmount1 = maxAmount1 >= 2 ? maxAmount1 - 2 : maxAmount1;
 
         (uint256 total0, uint256 total1) = getTotalAmounts();
         assert(total0 > 0 || total1 > 0);
 
         // Set shares to the maximum possible value that implies amounts not
         // greater than `maxAmount0` and `maxAmount1`
-        if (
-            maxAmount0.mul(total1) < maxAmount1.mul(total0) ||
-            total1 == 0
-        ) {
+        if (maxAmount0.mul(total1) < maxAmount1.mul(total0) || total1 == 0) {
             shares = maxAmount0.mul(_totalSupply).div(total0);
         } else {
             shares = maxAmount1.mul(_totalSupply).div(total1);
         }
         require(shares > 0, "shares");
 
+        // Deposit liquidity into Uniswap
         uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
-        uint128 rebalanceLiquidity = _liquidityForShares(rebalanceRange, shares);
+        uint128 skewLiquidity = _liquidityForShares(skewRange, shares);
         _mintLiquidity(baseRange, baseLiquidity, msg.sender);
-        _mintLiquidity(rebalanceRange, rebalanceLiquidity, msg.sender);
+        _mintLiquidity(skewRange, skewLiquidity, msg.sender);
 
+        // Mint shares
         _mint(to, shares);
         require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
     }
@@ -134,11 +141,14 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
         address to
     ) internal returns (uint256 shares) {
         shares = _liquidityForAmounts(baseRange, maxAmount0, maxAmount1);
-        require(shares < type(uint128).max, "shares");
         require(shares > 0, "shares");
+        require(shares < type(uint128).max, "shares");
 
+        // Deposit liquidity into Uniswap. The initial mint only places an
+        // order in the base range and ignores the skew range.
         _mintLiquidity(baseRange, uint128(shares), msg.sender);
 
+        // Mint shares
         _mint(to, shares);
         require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
     }
@@ -147,11 +157,13 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
         require(shares > 0, "shares");
         require(to != address(0), "to");
 
+        // Withdraw liquidity from Uniswap
         uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
-        uint128 rebalanceLiquidity = _liquidityForShares(rebalanceRange, shares);
+        uint128 skewLiquidity = _liquidityForShares(skewRange, shares);
         _burnLiquidity(baseRange, baseLiquidity, to, false);
-        _burnLiquidity(rebalanceRange, rebalanceLiquidity, to, false);
+        _burnLiquidity(skewRange, skewLiquidity, to, false);
 
+        // Burn shares
         _burn(msg.sender, shares);
     }
 
@@ -162,38 +174,22 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
 
         // TODO: check twap matches
 
-        // Remove all liquidity
+        // Withdraw all liquidity from Uniswap
         _burnLiquidity(baseRange, _deposited(baseRange), address(this), true);
-        _burnLiquidity(rebalanceRange, _deposited(rebalanceRange), address(this), true);
+        _burnLiquidity(skewRange, _deposited(skewRange), address(this), true);
 
-        // Update base range and add liquidity
+        // Update base range and place order
         _updateBaseRange();
         _mintLiquidity(baseRange, _maxLiquidity(baseRange), address(this));
 
-        // Update rebalance range
-        _updateRebalanceRange();
-        _mintLiquidity(rebalanceRange, _maxLiquidity(rebalanceRange), address(this));
+        // Update skew range and place order
+        _updateSkewRange();
+        _mintLiquidity(skewRange, _maxLiquidity(skewRange), address(this));
 
-        // Check base and rebalance ranges aren't the same, otherwise
+        // Check base and skew ranges aren't the same, otherwise
         // calculations would fail elsewhere
-        assert(
-            baseRange.tickLower != rebalanceRange.tickLower ||
-                baseRange.tickUpper != rebalanceRange.tickUpper
-        );
+        assert(baseRange.lower != skewRange.lower || baseRange.upper != skewRange.upper);
     }
-
-    function _updateBaseRange() internal {
-        Range memory range = _baseRange();
-        baseRange = Range(range.tickLower, range.tickUpper);
-    }
-
-    function _updateRebalanceRange() internal {
-        Range memory range = _rebalanceRange();
-        rebalanceRange = Range(range.tickLower, range.tickUpper);
-    }
-
-    function _baseRange() internal virtual returns (Range memory);
-    function _rebalanceRange() internal virtual returns (Range memory);
 
     function _mintLiquidity(
         Range memory range,
@@ -203,14 +199,7 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
         if (liquidity == 0) {
             return;
         }
-
-        pool.mint(
-            address(this),
-            range.tickLower,
-            range.tickUpper,
-            liquidity,
-            abi.encode(payer)
-        );
+        pool.mint(address(this), range.lower, range.upper, liquidity, abi.encode(payer));
     }
 
     function _burnLiquidity(
@@ -225,13 +214,13 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
 
         // Burn liquidity
         (uint256 amount0, uint256 amount1) =
-            pool.burn(range.tickLower, range.tickUpper, liquidity);
+            pool.burn(range.lower, range.upper, liquidity);
 
         // Collect amount owed
         uint128 collect0 = collectAll ? type(uint128).max : uint128(amount0);
         uint128 collect1 = collectAll ? type(uint128).max : uint128(amount1);
         if (collect0 > 0 || collect1 > 0) {
-            pool.collect(to, range.tickLower, range.tickUpper, collect0, collect1);
+            pool.collect(to, range.lower, range.upper, collect0, collect1);
         }
     }
 
@@ -271,20 +260,19 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
         }
     }
 
-    function getTotalAmounts()
-        public
-        view
-        returns (uint256 total0, uint256 total1)
-    {
-        (uint256 baseAmount0, uint256 baseAmount1) =
+    /**
+     * @notice Calculates total holdings of `token0` and `token1`, i.e. how
+     * much this vault would hold if it withdrew all its liquidity.
+     */
+    function getTotalAmounts() public view returns (uint256, uint256) {
+        (uint256 base0, uint256 base1) =
             _amountsForLiquidity(baseRange, _deposited(baseRange));
-        (uint256 rebalanceAmount0, uint256 rebalanceAmount1) =
-            _amountsForLiquidity(rebalanceRange, _deposited(rebalanceRange));
-        total0 = token0.balanceOf(address(this)).add(baseAmount0).add(
-            rebalanceAmount0
-        );
-        total1 = token1.balanceOf(address(this)).add(baseAmount1).add(
-            rebalanceAmount1
+        (uint256 skew0, uint256 skew1) =
+            _amountsForLiquidity(skewRange, _deposited(skewRange));
+
+        return (
+            token0.balanceOf(address(this)).add(base0).add(skew0),
+            token1.balanceOf(address(this)).add(base1).add(skew1)
         );
     }
 
@@ -294,16 +282,15 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
         view
         returns (uint128)
     {
-        uint128 liquidity = _deposited(range);
         // TODO check overflow
-        return uint128(uint256(liquidity).mul(shares).div(totalSupply()));
+        return uint128(uint256(_deposited(range)).mul(shares).div(totalSupply()));
     }
 
     /// @dev Amount of liquidity deposited by vault into Uniswap V3 pool for a
     /// certain range
     function _deposited(Range memory range) internal view returns (uint128 liquidity) {
         bytes32 positionKey =
-            keccak256(abi.encodePacked(address(this), range.tickLower, range.tickUpper));
+            keccak256(abi.encodePacked(address(this), range.lower, range.upper));
         (liquidity, , , , ) = pool.positions(positionKey);
     }
 
@@ -313,49 +300,6 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
         uint256 balance0 = token0.balanceOf(address(this));
         uint256 balance1 = token1.balanceOf(address(this));
         return _liquidityForAmounts(range, balance0, balance1);
-    }
-
-    function _amountsForLiquidity(Range memory range, uint128 liquidity)
-        internal
-        view
-        returns (uint256, uint256)
-    {
-        return
-            LiquidityAmounts.getAmountsForLiquidity(
-                _sqrtRatioX96(),
-                TickMath.getSqrtRatioAtTick(range.tickLower),
-                TickMath.getSqrtRatioAtTick(range.tickUpper),
-                liquidity
-            );
-    }
-
-    function _liquidityForAmounts(
-        Range memory range,
-        uint256 amount0,
-        uint256 amount1
-    ) internal view returns (uint128) {
-        return
-            LiquidityAmounts.getLiquidityForAmounts(
-                _sqrtRatioX96(),
-                TickMath.getSqrtRatioAtTick(range.tickLower),
-                TickMath.getSqrtRatioAtTick(range.tickUpper),
-                amount0,
-                amount1
-            );
-    }
-
-    function _getTwap() internal view returns (int24) {
-        uint32[] memory secondsAgo = new uint32[](2);
-        secondsAgo[0] = twapDuration;
-        secondsAgo[1] = 0;
-
-        (int56[] memory tickCumulatives, uint160[] memory _) = pool.observe(secondsAgo);
-        return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
-    }
-
-    /// @dev Current Uniswap price in the form of sqrt(price) * 2^96
-    function _sqrtRatioX96() internal view returns (uint160 sqrtRatioX96) {
-        (sqrtRatioX96, , , , , , ) = pool.slot0();
     }
 
     /// @dev Current Uniswap price in ticks, rounded down and rounded up
@@ -371,6 +315,63 @@ abstract contract BaseVault is IUniswapV3MintCallback, Multicall, SelfPermit, ER
         int24 tickFloor = compressed * tickSpacing;
         return Range(tickFloor, tickFloor + tickSpacing);
     }
+
+    function _amountsForLiquidity(Range memory range, uint128 liquidity)
+        internal
+        view
+        returns (uint256, uint256)
+    {
+        return
+            LiquidityAmounts.getAmountsForLiquidity(
+                _sqrtRatioX96(),
+                TickMath.getSqrtRatioAtTick(range.lower),
+                TickMath.getSqrtRatioAtTick(range.upper),
+                liquidity
+            );
+    }
+
+    function _liquidityForAmounts(
+        Range memory range,
+        uint256 amount0,
+        uint256 amount1
+    ) internal view returns (uint128) {
+        return
+            LiquidityAmounts.getLiquidityForAmounts(
+                _sqrtRatioX96(),
+                TickMath.getSqrtRatioAtTick(range.lower),
+                TickMath.getSqrtRatioAtTick(range.upper),
+                amount0,
+                amount1
+            );
+    }
+
+    /// @dev Current Uniswap price in the form of sqrt(price) * 2^96
+    function _sqrtRatioX96() internal view returns (uint160 sqrtRatioX96) {
+        (sqrtRatioX96, , , , , , ) = pool.slot0();
+    }
+
+    function _getTwap() internal view returns (int24) {
+        uint32[] memory secondsAgo = new uint32[](2);
+        secondsAgo[0] = twapDuration;
+        secondsAgo[1] = 0;
+
+        (int56[] memory tickCumulatives, uint160[] memory _) = pool.observe(secondsAgo);
+        return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
+    }
+
+    function _updateBaseRange() internal {
+        Range memory range = _baseRange();
+        baseRange = Range(range.lower, range.upper);
+    }
+
+    function _updateSkewRange() internal {
+        Range memory range = _skewRange();
+        skewRange = Range(range.lower, range.upper);
+    }
+
+    function _baseRange() internal virtual returns (Range memory);
+
+    function _skewRange() internal virtual returns (Range memory);
 
     /**
      * @notice Set refresh cooldown - the number of seconds that need to pass
