@@ -233,7 +233,7 @@ contract PassiveRebalanceVault is
     {
         shares = _liquidityForAmounts(baseRange, maxAmount0, maxAmount1);
         require(shares > 0, "shares");
-        require(shares < type(uint128).max, "shares");
+        require(shares < type(uint128).max, "shares overflow");
 
         // Deposit liquidity into Uniswap. The initial mint only places an
         // order in the base range and ignores the skew range.
@@ -339,8 +339,9 @@ contract PassiveRebalanceVault is
         view
         returns (uint128)
     {
-        // TODO check overflow
-        return uint128(uint256(_deposited(range)).mul(shares).div(totalSupply()));
+        uint256 liquidity = uint256(_deposited(range)).mul(shares).div(totalSupply());
+        require(liquidity < type(uint128).max, "liquidity overflow");
+        return uint128(liquidity);
     }
 
     /// @dev Amount of liquidity deposited by vault into Uniswap V3 pool for a
@@ -423,8 +424,7 @@ contract PassiveRebalanceVault is
         (sqrtRatioX96, , , , , , ) = pool.slot0();
     }
 
-    // TODO: make internal
-    function _twap() public view returns (int24) {
+    function _twap() internal view returns (int24) {
         uint32[] memory secondsAgo = new uint32[](2);
         secondsAgo[0] = twapDuration;
         secondsAgo[1] = 0;

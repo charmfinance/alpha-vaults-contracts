@@ -557,9 +557,9 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     with reverts("governance"):
         vault.setMaxTwapDeviation(1000, {"from": user})
     with reverts("maxTwapDeviation"):
-        vault.setMaxTwapDeviation(-1, {"from": user})
+        vault.setMaxTwapDeviation(-1, {"from": gov})
     vault.setMaxTwapDeviation(1000, {"from": gov})
-    assert vault.setMaxTwapDeviation() == 1000
+    assert vault.maxTwapDeviation() == 1000
 
     with reverts("governance"):
         vault.setTwapDuration(800, {"from": user})
