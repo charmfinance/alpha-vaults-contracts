@@ -4,9 +4,9 @@ pragma solidity 0.7.6;
 pragma abicoder v2; // TODO remove
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import '@openzeppelin/contracts/drafts/ERC20Permit.sol';
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -15,6 +15,8 @@ import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.so
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/Position.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import "@uniswap/v3-periphery/contracts/base/Multicall.sol";
+import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
@@ -22,13 +24,15 @@ import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 // TODO: events
 // TODO: fuzzing
 // TODO: add twap check
+// TODO: return amounts from burn
+
 
 /**
  * @title   Passive Rebalance Vault
  * @notice  A vault that makes it easy for users to provide liquidity on
  *          Uniswap V3 in a smart way.
  */
-contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard {
+contract PassiveRebalanceVault is IUniswapV3MintCallback, Multicall, SelfPermit, ERC20Permit, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
     using Position for mapping(bytes32 => Position.Info);
@@ -74,7 +78,7 @@ contract PassiveRebalanceVault is IUniswapV3MintCallback, ERC20, ReentrancyGuard
         uint32 _twapDuration,
         uint256 _refreshCooldown,
         uint256 _totalSupplyCap
-    ) ERC20("Passive Rebalance Vault", "PRV") {
+    ) ERC20("Passive Rebalance Vault", "PRV") ERC20Permit("Passive Rebalance Vault") {
         require(_pool != address(0));
         pool = IUniswapV3Pool(_pool);
 
