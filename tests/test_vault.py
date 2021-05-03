@@ -18,7 +18,7 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
     assert vault.maxTwapDeviation() == 500
     assert vault.twapDuration() == 600
     assert vault.rebalanceCooldown() == 12 * 60 * 60
-    assert vault.totalSupplyCap() == 100e18
+    assert vault.maxTotalSupply() == 100e18
     assert vault.governance() == gov
 
     tick = pool.slot0()[1] // 60 * 60
@@ -576,9 +576,9 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.rebalanceCooldown() == 12 * 60 * 60
 
     with reverts("governance"):
-        vault.setTotalSupplyCap(0, {"from": user})
-    vault.setTotalSupplyCap(0, {"from": gov})
-    assert vault.totalSupplyCap() == 0
+        vault.setMaxTotalSupply(0, {"from": user})
+    vault.setMaxTotalSupply(0, {"from": gov})
+    assert vault.maxTotalSupply() == 0
 
     with reverts("governance"):
         vault.setGovernance(recipient, {"from": user})

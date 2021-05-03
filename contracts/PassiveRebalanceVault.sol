@@ -52,7 +52,7 @@ contract PassiveRebalanceVault is
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
     uint256 public rebalanceCooldown;
-    uint256 public totalSupplyCap;
+    uint256 public maxTotalSupply;
 
     Range public baseRange;
     Range public skewRange;
@@ -68,7 +68,7 @@ contract PassiveRebalanceVault is
      * @param _skewThreshold Width of skew range order in ticks
      * @param _rebalanceCooldown How much time needs to pass between rebalance()
      * calls in seconds
-     * @param _totalSupplyCap Users can't deposit if total supply would exceed
+     * @param _maxTotalSupply Users can't deposit if total supply would exceed
      * this limit. Value of 0 means no cap.
      */
     constructor(
@@ -78,7 +78,7 @@ contract PassiveRebalanceVault is
         int24 _maxTwapDeviation,
         uint32 _twapDuration,
         uint256 _rebalanceCooldown,
-        uint256 _totalSupplyCap
+        uint256 _maxTotalSupply
     ) ERC20("PassiveRebalanceVault", "PR") {
         require(_pool != address(0));
         pool = IUniswapV3Pool(_pool);
@@ -92,7 +92,7 @@ contract PassiveRebalanceVault is
         maxTwapDeviation = _maxTwapDeviation;
         twapDuration = _twapDuration;
         rebalanceCooldown = _rebalanceCooldown;
-        totalSupplyCap = _totalSupplyCap;
+        maxTotalSupply = _maxTotalSupply;
         governance = msg.sender;
 
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
@@ -151,7 +151,7 @@ contract PassiveRebalanceVault is
 
         // Mint shares
         _mint(to, shares);
-        require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
+        require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
 
         // Return amounts deposited
         amount0 = base0.add(skew0);
@@ -241,7 +241,7 @@ contract PassiveRebalanceVault is
 
         // Mint shares
         _mint(to, shares);
-        require(totalSupplyCap == 0 || totalSupply() <= totalSupplyCap, "totalSupplyCap");
+        require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
@@ -495,8 +495,8 @@ contract PassiveRebalanceVault is
      * can't deposit via mint() if their deposit would cause the total supply
      * to exceed this cap. A value of 0 means no limit.
      */
-    function setTotalSupplyCap(uint256 _totalSupplyCap) external onlyGovernance {
-        totalSupplyCap = _totalSupplyCap;
+    function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {
+        maxTotalSupply = _maxTotalSupply;
     }
 
     /**
