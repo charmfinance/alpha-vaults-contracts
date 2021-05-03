@@ -10,8 +10,11 @@ import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
 
-// TODO add warnings
-
+/**
+ * @dev    DO NOT USE IN PRODUCTION! This is a simple router that's only
+ *         intended for use in tests and lacks critical safety checks such as
+ *         for slippage and callback sender.
+ */
 contract Router is IUniswapV3MintCallback, IUniswapV3SwapCallback {
     function mint(
         IUniswapV3Pool pool,
@@ -19,6 +22,9 @@ contract Router is IUniswapV3MintCallback, IUniswapV3SwapCallback {
         int24 tickUpper,
         uint128 amount
     ) external {
+        int24 tickSpacing = pool.tickSpacing();
+        require(tickLower % tickSpacing == 0, "tickLower must be a multiple of tickSpacing");
+        require(tickUpper % tickSpacing == 0, "tickUpper must be a multiple of tickSpacing");
         pool.mint(
             msg.sender,
             tickLower,
