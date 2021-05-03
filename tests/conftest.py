@@ -64,7 +64,7 @@ def pool(MockToken, router, pm, gov, users):
     max_tick = 887272 // 60 * 60
     router.mint(pool, -max_tick, max_tick, 1e16, {"from": gov})
 
-    # Increase cardinality and fast forward so twap works
+    # Increase cardinality and fast forward so TWAP works
     pool.increaseObservationCardinalityNext(100, {"from": gov})
     chain.sleep(3600)
 

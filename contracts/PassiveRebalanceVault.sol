@@ -95,14 +95,14 @@ contract PassiveRebalanceVault is
         totalSupplyCap = _totalSupplyCap;
         governance = msg.sender;
 
-        baseRange = _baseRange();
-        skewRange = _skewRange();
-
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
         require(_skewThreshold % tickSpacing == 0, "skewThreshold");
         require(_baseThreshold > 0, "baseThreshold");
         require(_skewThreshold > 0, "skewThreshold");
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+
+        baseRange = _baseRange();
+        skewRange = _skewRange();
     }
 
     function deposit(
@@ -323,14 +323,20 @@ contract PassiveRebalanceVault is
      * much this vault would hold if it withdrew all its liquidity.
      */
     function getTotalAmounts() public view override returns (uint256, uint256) {
-        uint128 baseLiquidity = _deposited(baseRange);
-        uint128 skewLiquidity = _deposited(skewRange);
-        (uint256 base0, uint256 base1) = _amountsForLiquidity(baseRange, baseLiquidity);
-        (uint256 skew0, uint256 skew1) = _amountsForLiquidity(skewRange, skewLiquidity);
+        (uint256 base0, uint256 base1) = getBaseAmounts();
+        (uint256 skew0, uint256 skew1) = getSkewAmounts();
         return (
             token0.balanceOf(address(this)).add(base0).add(skew0),
             token1.balanceOf(address(this)).add(base1).add(skew1)
         );
+    }
+
+    function getBaseAmounts() public view returns (uint256, uint256) {
+        return _amountsForLiquidity(baseRange, _deposited(baseRange));
+    }
+
+    function getSkewAmounts() public view returns (uint256, uint256) {
+        return _amountsForLiquidity(skewRange, _deposited(skewRange));
     }
 
     /// @dev Convert shares into amount of liquidity
@@ -365,15 +371,15 @@ contract PassiveRebalanceVault is
         return Range(mid.lower - baseThreshold, mid.upper + baseThreshold);
     }
 
+    /// @dev Return range just above mid if there's excess token0 left over
+    /// or range just below mid if there's excess token1 left over
     function _skewRange() internal returns (Range memory) {
         Range memory mid = _midRange();
+        Range memory bid = Range(mid.lower - skewThreshold, mid.lower);
+        Range memory offer = Range(mid.upper, mid.upper + skewThreshold);
 
-        // Set range above mid if there's excess token0 left over
-        if (token0.balanceOf(address(this)) > 100) {
-            return Range(mid.upper, mid.upper + skewThreshold);
-        } else {
-            return Range(mid.lower - skewThreshold, mid.lower);
-        }
+        // Return the range on which more liquidity can be placed
+        return _maxLiquidity(bid) > _maxLiquidity(offer) ? bid : offer;
     }
 
     /// @dev Current Uniswap price in ticks, rounded down and rounded up
