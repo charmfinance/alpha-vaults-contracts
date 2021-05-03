@@ -368,15 +368,15 @@ contract PassiveRebalanceVault is
 
     function _baseRange() internal returns (Range memory) {
         Range memory mid = _midRange();
-        return Range(mid.lower - baseThreshold, mid.upper + baseThreshold);
+        return Range(_cap(mid.lower - baseThreshold), _cap(mid.upper + baseThreshold));
     }
 
     /// @dev Return range just above mid if there's excess token0 left over
     /// or range just below mid if there's excess token1 left over
     function _skewRange() internal returns (Range memory) {
         Range memory mid = _midRange();
-        Range memory bid = Range(mid.lower - skewThreshold, mid.lower);
-        Range memory offer = Range(mid.upper, mid.upper + skewThreshold);
+        Range memory bid = Range(_cap(mid.lower - skewThreshold), _cap(mid.lower));
+        Range memory offer = Range(_cap(mid.upper), _cap(mid.upper + skewThreshold));
 
         // Return the range on which more liquidity can be placed
         return _maxLiquidity(bid) > _maxLiquidity(offer) ? bid : offer;
@@ -385,15 +385,28 @@ contract PassiveRebalanceVault is
     /// @dev Current Uniswap price in ticks, rounded down and rounded up
     function _midRange() internal view returns (Range memory) {
         (, int24 tick, , , , , ) = pool.slot0();
+        int24 tickFloor = _floor(tick);
+        return Range(tickFloor, tickFloor + tickSpacing);
+    }
 
-        // Round towards negative infinity
+    /// @dev Round towards negative infinity so that tick is a multiple of
+    /// tickSpacing
+    function _floor(int24 tick) internal view returns (int24) {
         int24 compressed = tick / tickSpacing;
         if (tick < 0 && tick % tickSpacing != 0) {
             compressed--;
         }
+        return compressed * tickSpacing;
+    }
 
-        int24 tickFloor = compressed * tickSpacing;
-        return Range(tickFloor, tickFloor + tickSpacing);
+    function _cap(int24 tick) internal view returns (int24) {
+        if (tick < TickMath.MIN_TICK) {
+            return _floor(TickMath.MIN_TICK + tickSpacing - 1);
+        }
+        if (tick > TickMath.MAX_TICK) {
+            return _floor(TickMath.MAX_TICK);
+        }
+        return tick;
     }
 
     function _amountsForLiquidity(Range memory range, uint128 liquidity)
