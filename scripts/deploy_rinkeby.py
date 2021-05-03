@@ -27,5 +27,7 @@ def main():
     # set ETH/USDC price to 2000
     pool.initialize(floor(sqrt(price) * (1 << 96)), {"from": deployer})
 
-    vault = deployer.deploy(PassiveRebalanceVault, pool, 2400, 1200, 600, 600, 100e18)
+    vault = deployer.deploy(
+        PassiveRebalanceVault, pool, 2400, 1200, 500, 600, 600, 100e18
+    )
     print(f"Vault address: {vault.address}")
