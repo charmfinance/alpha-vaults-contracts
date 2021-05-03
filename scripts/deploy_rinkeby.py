@@ -1,4 +1,4 @@
-from brownie import accounts, project, MockToken, PassiveRebalanceVault
+from brownie import accounts, project, MockToken, PassiveRebalanceVault, Router
 from math import floor, sqrt
 
 
@@ -24,10 +24,22 @@ def main():
     inverse = pool.token0() == usdc
     price = 1e18 / 2000e8 if inverse else 2000e8 / 1e18
 
-    # set ETH/USDC price to 2000
+    # Set ETH/USDC price to 2000
     pool.initialize(floor(sqrt(price) * (1 << 96)), {"from": deployer})
+
+    # Increase cardinality so TWAP works
+    pool.increaseObservationCardinalityNext(100, {"from": deployer})
 
     vault = deployer.deploy(
         PassiveRebalanceVault, pool, 2400, 1200, 500, 600, 600, 100e18
     )
+
+    router = deployer.deploy(Router)
+    MockToken.at(eth).approve(router, 1 << 255, {"from": deployer})
+    MockToken.at(usdc).approve(router, 1 << 255, {"from": deployer})
+
+    max_tick = 887272 // 60 * 60
+    router.mint(pool, -max_tick, max_tick, 1e15, {"from": deployer})
+
     print(f"Vault address: {vault.address}")
+    print(f"Router address: {router.address}")
