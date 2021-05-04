@@ -27,7 +27,7 @@ def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, shares):
     "shares",
     [1e4, 1e18],
 )
-def test_total_amounts_per_share_do_not_increase(
+def test_total_amounts_per_share_do_not_decrease(
     vaultAfterPriceMove, tokens, user, recipient, shares
 ):
     vault = vaultAfterPriceMove
@@ -46,8 +46,8 @@ def test_total_amounts_per_share_do_not_increase(
     supply = vault.totalSupply()
     newValuePerShare0 = total0 / supply
     newValuePerShare1 = total1 / supply
-    assert newValuePerShare0 <= valuePerShare0
-    assert newValuePerShare1 <= valuePerShare1
+    assert newValuePerShare0 >= valuePerShare0
+    assert newValuePerShare1 >= valuePerShare1
     assert approx(newValuePerShare0, abs=1) == valuePerShare0
     assert approx(newValuePerShare1, abs=1) == valuePerShare1
 
