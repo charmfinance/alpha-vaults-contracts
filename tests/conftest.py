@@ -1,6 +1,7 @@
 from brownie import chain
 from math import sqrt
 import pytest
+from web3 import Web3
 
 
 UNISWAP_V3_CORE = "Uniswap/uniswap-v3-core@1.0.0-rc.2"
@@ -29,11 +30,6 @@ def users(gov, user, recipient):
 @pytest.fixture
 def router(Router, gov):
     yield gov.deploy(Router)
-
-
-@pytest.fixture
-def helper(TestHelper, gov):
-    yield gov.deploy(TestHelper)
 
 
 @pytest.fixture
@@ -154,29 +150,6 @@ def vaultAfterPriceUp(vault, pool, router, gov):
 
 
 @pytest.fixture
-def getPositions(pool, helper):
-    def f(vault):
-        baseKey = helper.computePositionKey(vault, vault.baseLower(), vault.baseUpper())
-        skewKey = helper.computePositionKey(vault, vault.skewLower(), vault.skewUpper())
-        return pool.positions(baseKey), pool.positions(skewKey)
-
-    yield f
-
-
-@pytest.fixture
-def debug(pool, tokens, helper):
-    def f(vault):
-        baseKey = helper.computePositionKey(vault, vault.baseLower(), vault.baseUpper())
-        skewKey = helper.computePositionKey(vault, vault.skewLower(), vault.skewUpper())
-        print(f"Passive position:    {pool.positions(baseKey)}")
-        print(f"Rebalance position:  {pool.positions(skewKey)}")
-        print(f"Spare balance 0:  {tokens[0].balanceOf(vault)}")
-        print(f"Spare balance 1:  {tokens[1].balanceOf(vault)}")
-
-    yield f
-
-
-@pytest.fixture
 def poolFromPrice(pm, PassiveRebalanceVault, MockToken, tokens, gov):
     def f(price):
         UniswapV3Core = pm(UNISWAP_V3_CORE)
@@ -193,3 +166,32 @@ def poolFromPrice(pm, PassiveRebalanceVault, MockToken, tokens, gov):
         return pool
 
     yield f
+
+
+@pytest.fixture
+def getPositions(pool):
+    def f(vault):
+        baseKey = computePositionKey(vault, vault.baseLower(), vault.baseUpper())
+        skewKey = computePositionKey(vault, vault.skewLower(), vault.skewUpper())
+        return pool.positions(baseKey), pool.positions(skewKey)
+
+    yield f
+
+
+@pytest.fixture
+def debug(pool, tokens):
+    def f(vault):
+        baseKey = computePositionKey(vault, vault.baseLower(), vault.baseUpper())
+        skewKey = computePositionKey(vault, vault.skewLower(), vault.skewUpper())
+        print(f"Passive position:    {pool.positions(baseKey)}")
+        print(f"Rebalance position:  {pool.positions(skewKey)}")
+        print(f"Spare balance 0:  {tokens[0].balanceOf(vault)}")
+        print(f"Spare balance 1:  {tokens[1].balanceOf(vault)}")
+
+    yield f
+
+
+def computePositionKey(owner, tickLower, tickUpper):
+    return Web3.solidityKeccak(
+        ["address", "int24", "int24"], [str(owner), tickLower, tickUpper]
+    )

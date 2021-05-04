@@ -13,13 +13,13 @@ MAX_EXAMPLES = 5
 def test_deposit(vault, pool, router, gov, user, shares1, shares2, buy, qty):
 
     # Deposit, move price and rebalance to simulate existing activity
-    vault.deposit(shares1, 1<<255, 1<<255, gov, {"from": gov})
+    vault.deposit(shares1, 1 << 255, 1 << 255, gov, {"from": gov})
     router.swap(pool, buy, qty, {"from": gov})
-    vault.setMaxTwapDeviation(1<<22, {"from": gov})  # ignore twap deviation
+    vault.setMaxTwapDeviation(1 << 22, {"from": gov})  # ignore twap deviation
     vault.rebalance({"from": gov})
 
     before = get_stats(vault)
-    tx = vault.deposit(shares2, 1<<255, 1<<255, gov, {"from": gov})
+    tx = vault.deposit(shares2, 1 << 255, 1 << 255, gov, {"from": gov})
     amount0, amount1 = tx.return_value
     after = get_stats(vault)
 
@@ -43,9 +43,9 @@ def test_deposit(vault, pool, router, gov, user, shares1, shares2, buy, qty):
 def test_rebalance(vault, pool, router, gov, user, shares, tokens, buy, qty):
 
     # Deposit, move price and rebalance to simulate existing activity
-    vault.deposit(shares, 1<<255, 1<<255, gov, {"from": gov})
+    vault.deposit(shares, 1 << 255, 1 << 255, gov, {"from": gov})
     router.swap(pool, buy, qty, {"from": gov})
-    vault.setMaxTwapDeviation(1<<22, {"from": gov})  # ignore twap deviation
+    vault.setMaxTwapDeviation(1 << 22, {"from": gov})  # ignore twap deviation
 
     before = get_stats(vault)
     vault.rebalance({"from": user})
