@@ -94,7 +94,7 @@ def test_price_is_min_or_max_tick_checks(PassiveRebalanceVault, poolFromPrice, g
 
 
 @pytest.mark.parametrize(
-    "maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]]
+    "maxAmount0,maxAmount1", [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e4]]
 )
 def test_mint_initial(
     vault, pool, tokens, gov, user, recipient, maxAmount0, maxAmount1
@@ -142,7 +142,7 @@ def test_mint_initial_checks(vault, user, recipient):
 
 
 @pytest.mark.parametrize(
-    "maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]]
+    "maxAmount0,maxAmount1", [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e4]]
 )
 def test_mint_existing(
     vaultAfterPriceMove,
@@ -204,7 +204,7 @@ def test_mint_existing(
 
 @pytest.mark.parametrize(
     "maxAmount0,maxAmount1",
-    [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [0, 1e10], [1, 1e10], [2, 1e10]],
+    [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [0, 1e10], [1, 1e10], [2, 1e10]],
 )
 def test_mint_existing_when_price_up(
     vaultAfterPriceUp,
@@ -249,7 +249,7 @@ def test_mint_existing_when_price_up(
 
 @pytest.mark.parametrize(
     "maxAmount0,maxAmount1",
-    [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3], [1e8, 0], [1e8, 1], [1e8, 2]],
+    [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e4], [1e8, 0], [1e8, 1], [1e8, 2]],
 )
 def test_mint_existing_when_price_down(
     vaultAfterPriceDown,
@@ -476,7 +476,7 @@ def test_rebalance_twap_check(
 
 @pytest.mark.parametrize(
     "maxAmount0,maxAmount1",
-    [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]],
+    [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e4]],
 )
 def test_values(vaultAfterPriceMove, tokens, user, recipient, maxAmount0, maxAmount1):
     vault = vaultAfterPriceMove
@@ -498,10 +498,10 @@ def test_values(vaultAfterPriceMove, tokens, user, recipient, maxAmount0, maxAmo
 @pytest.mark.parametrize(
     "maxAmount0,maxAmount1",
     [
-        [1e3, 1e10],
+        [1e4, 1e10],
         [1e7, 1e10],
         [1e9, 1e10],
-        [1e10, 1e3],
+        [1e10, 1e4],
         [3, 1e10],
         [1e10, 10],
         [3, 10],
@@ -624,10 +624,10 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
 
     vault.deposit(1e8, 1e8, gov, {"from": gov})
     with reverts("governance"):
-        vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e3, {"from": user})
+        vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e4, {"from": user})
     balance0 = tokens[0].balanceOf(gov)
     balance1 = tokens[1].balanceOf(gov)
-    vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e3, {"from": gov})
+    vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e4, {"from": gov})
     assert tokens[0].balanceOf(gov) > balance0
     assert tokens[1].balanceOf(gov) > balance1
 

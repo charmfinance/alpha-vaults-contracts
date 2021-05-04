@@ -36,6 +36,8 @@ contract PassiveRebalanceVault is
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
+    uint256 public constant MIN_TOTAL_SUPPLY = 1000;
+
     IUniswapV3Pool public pool;
     IERC20 public token0;
     IERC20 public token1;
@@ -125,7 +127,7 @@ contract PassiveRebalanceVault is
 
         uint256 _totalSupply = totalSupply();
         if (_totalSupply == 0) {
-            return _depositWhenEmpty(maxAmount0, maxAmount1, to);
+            return _initialDeposit(maxAmount0, maxAmount1, to);
         }
 
         // Decrease slightly so amounts don't exceed max
@@ -154,11 +156,41 @@ contract PassiveRebalanceVault is
 
         // Mint shares
         _mint(to, shares);
-        require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
+        _totalSupply = totalSupply();
+        require(maxTotalSupply == 0 || _totalSupply <= maxTotalSupply, "maxTotalSupply");
 
-        // Return amounts deposited
         amount0 = baseAmount0.add(skewAmount0);
         amount1 = baseAmount1.add(skewAmount1);
+        emit Deposit(msg.sender, to, shares, amount0, amount1);
+
+        // The first MIN_TOTAL_SUPPLY shares are locked
+        require(_totalSupply >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
+    }
+
+    /// @dev Called from deposit when total supply is 0. It places the base
+    /// order and ignores the skew order.
+    function _initialDeposit(
+        uint256 maxAmount0,
+        uint256 maxAmount1,
+        address to
+    )
+        internal
+        returns (
+            uint256 shares,
+            uint256 amount0,
+            uint256 amount1
+        )
+    {
+        shares = _liquidityForAmounts(baseLower, baseUpper, maxAmount0, maxAmount1);
+        require(shares < type(uint128).max, "shares overflow");
+        require(shares > MIN_TOTAL_SUPPLY, "shares");
+
+        // Deposit liquidity into Uniswap
+        (amount0, amount1) = _mintLiquidity(baseLower, baseUpper, uint128(shares), msg.sender);
+
+        // Mint shares
+        _mint(to, shares);
+        require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
@@ -182,7 +214,6 @@ contract PassiveRebalanceVault is
         // Burn shares
         _burn(msg.sender, shares);
 
-        // Return amounts withdrawn
         amount0 = baseAmount0.add(skewAmount0);
         amount1 = baseAmount1.add(skewAmount1);
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
@@ -226,33 +257,6 @@ contract PassiveRebalanceVault is
         // Check base and skew ranges aren't the same, otherwise calculations
         // would fail elsewhere
         assert(baseLower != skewLower || baseUpper != skewUpper);
-    }
-
-    /// @dev Called from deposit when total supply is 0. It places the base
-    /// order and ignores the skew order.
-    function _depositWhenEmpty(
-        uint256 maxAmount0,
-        uint256 maxAmount1,
-        address to
-    )
-        internal
-        returns (
-            uint256 shares,
-            uint256 amount0,
-            uint256 amount1
-        )
-    {
-        shares = _liquidityForAmounts(baseLower, baseUpper, maxAmount0, maxAmount1);
-        require(shares > 0, "shares");
-        require(shares < type(uint128).max, "shares overflow");
-
-        // Deposit liquidity into Uniswap
-        (amount0, amount1) = _mintLiquidity(baseLower, baseUpper, uint128(shares), msg.sender);
-
-        // Mint shares
-        _mint(to, shares);
-        require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
-        emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
     function _mintLiquidity(
