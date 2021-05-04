@@ -4,10 +4,17 @@ from pytest import approx
 
 
 @pytest.mark.parametrize(
-    "maxAmount0,maxAmount1", [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e4]]
+    "shares",
+    [1e4, 1e18],
 )
 def test_deposit_initial(
-    vault, pool, tokens, gov, user, recipient, maxAmount0, maxAmount1
+    vault,
+    pool,
+    tokens,
+    gov,
+    user,
+    recipient,
+    shares,
 ):
 
     # Store balances
@@ -15,22 +22,13 @@ def test_deposit_initial(
     balance1 = tokens[1].balanceOf(user)
 
     # Mint
-    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
-    shares, amount0, amount1 = tx.return_value
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
+    amount0, amount1 = tx.return_value
 
     # Check return values
     assert shares == vault.balanceOf(recipient) > 0
     assert amount0 == balance0 - tokens[0].balanceOf(user)
     assert amount1 == balance1 - tokens[1].balanceOf(user)
-
-    # Check spent right amount
-    zeroTight = amount0 / maxAmount0 > amount1 / maxAmount1
-    if zeroTight:
-        assert amount0 == maxAmount0
-        assert amount1 < maxAmount1
-    else:
-        assert amount0 < maxAmount0
-        assert amount1 == maxAmount1
 
     # Check event
     assert tx.events["Deposit"] == {
@@ -43,16 +41,21 @@ def test_deposit_initial(
 
 
 def test_deposit_initial_checks(vault, user, recipient):
+    with reverts("shares"):
+        vault.deposit(0, 1e8, 1e8, recipient, {"from": user})
     with reverts("MIN_TOTAL_SUPPLY"):
-        vault.deposit(0, 1e8, recipient, {"from": user})
-    with reverts("MIN_TOTAL_SUPPLY"):
-        vault.deposit(1e8, 0, recipient, {"from": user})
+        vault.deposit(1, 1e8, 1e8, recipient, {"from": user})
     with reverts("to"):
-        vault.deposit(1e8, 1e8, ZERO_ADDRESS, {"from": user})
+        vault.deposit(1e8, 1 << 255, 1 << 255, ZERO_ADDRESS, {"from": user})
+    with reverts("maxAmount0"):
+        vault.deposit(1e8, 0, 1 << 255, recipient, {"from": user})
+    with reverts("maxAmount1"):
+        vault.deposit(1e8, 1 << 255, 0, recipient, {"from": user})
 
 
 @pytest.mark.parametrize(
-    "maxAmount0,maxAmount1", [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e4]]
+    "shares",
+    [1e4, 1e18],
 )
 def test_deposit_existing(
     vaultAfterPriceMove,
@@ -63,8 +66,7 @@ def test_deposit_existing(
     gov,
     user,
     recipient,
-    maxAmount0,
-    maxAmount1,
+    shares,
 ):
     vault = vaultAfterPriceMove
 
@@ -75,26 +77,13 @@ def test_deposit_existing(
     base0, skew0 = getPositions(vault)
 
     # Mint
-    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
-    shares, amount0, amount1 = tx.return_value
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
+    amount0, amount1 = tx.return_value
 
     # Check return values
     assert shares == vault.balanceOf(recipient) > 0
     assert amount0 == balance0 - tokens[0].balanceOf(user)
     assert amount1 == balance1 - tokens[1].balanceOf(user)
-
-    # Check spent right amount
-    zeroTight = amount0 / maxAmount0 > amount1 / maxAmount1
-    if zeroTight:
-        # Max amount 0 is the tight constraint
-        assert approx(amount0, abs=3) == maxAmount0
-    else:
-        # Max amount 1 is the tight constraint
-        assert approx(amount1, abs=3) == maxAmount1
-
-    # Check amounts are less than max
-    assert amount0 <= maxAmount0
-    assert amount1 <= maxAmount1
 
     # Check liquidity and balances are in proportion
     base1, skew1 = getPositions(vault)
@@ -113,8 +102,8 @@ def test_deposit_existing(
 
 
 @pytest.mark.parametrize(
-    "maxAmount0,maxAmount1",
-    [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [0, 1e10], [1, 1e10], [2, 1e10]],
+    "shares",
+    [1e4, 1e18],
 )
 def test_deposit_existing_when_price_up(
     vaultAfterPriceUp,
@@ -125,8 +114,7 @@ def test_deposit_existing_when_price_up(
     gov,
     user,
     recipient,
-    maxAmount0,
-    maxAmount1,
+    shares,
 ):
     vault = vaultAfterPriceUp
 
@@ -137,18 +125,13 @@ def test_deposit_existing_when_price_up(
     base0, skew0 = getPositions(vault)
 
     # Mint
-    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
-    shares, amount0, amount1 = tx.return_value
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
+    amount0, amount1 = tx.return_value
 
     # Check return values
     assert shares == vault.balanceOf(recipient) > 0
-    assert amount0 == balance0 - tokens[0].balanceOf(user)
-    assert amount1 == balance1 - tokens[1].balanceOf(user)
-
-    # Check spent right amount
-    assert approx(amount1, rel=1e-5, abs=10) == maxAmount1
-    assert amount0 < 10
-    assert amount1 <= maxAmount1
+    assert amount0 == balance0 - tokens[0].balanceOf(user) == 0
+    assert amount1 == balance1 - tokens[1].balanceOf(user) > 0
 
     # Check liquidity and balances are in proportion
     base1, skew1 = getPositions(vault)
@@ -158,8 +141,8 @@ def test_deposit_existing_when_price_up(
 
 
 @pytest.mark.parametrize(
-    "maxAmount0,maxAmount1",
-    [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e4], [1e8, 0], [1e8, 1], [1e8, 2]],
+    "shares",
+    [1e4, 1e18],
 )
 def test_deposit_existing_when_price_down(
     vaultAfterPriceDown,
@@ -170,8 +153,7 @@ def test_deposit_existing_when_price_down(
     gov,
     user,
     recipient,
-    maxAmount0,
-    maxAmount1,
+    shares,
 ):
     vault = vaultAfterPriceDown
 
@@ -182,18 +164,13 @@ def test_deposit_existing_when_price_down(
     base0, skew0 = getPositions(vault)
 
     # Mint
-    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
-    shares, amount0, amount1 = tx.return_value
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
+    amount0, amount1 = tx.return_value
 
     # Check return values
     assert shares == vault.balanceOf(recipient) > 0
-    assert amount0 == balance0 - tokens[0].balanceOf(user)
-    assert amount1 == balance1 - tokens[1].balanceOf(user)
-
-    # Check spent right amount
-    assert approx(amount0, abs=10) == maxAmount0
-    assert amount0 <= maxAmount0
-    assert amount1 == 0
+    assert amount0 == balance0 - tokens[0].balanceOf(user) > 0
+    assert amount1 == balance1 - tokens[1].balanceOf(user) == 0
 
     # Check liquidity and balances are in proportion
     base1, skew1 = getPositions(vault)
@@ -204,23 +181,15 @@ def test_deposit_existing_when_price_down(
 
 def test_deposit_existing_checks(vaultAfterPriceMove, user, recipient):
     with reverts("shares"):
-        vaultAfterPriceMove.deposit(0, 1e8, recipient, {"from": user})
-    with reverts("shares"):
-        vaultAfterPriceMove.deposit(1e8, 0, recipient, {"from": user})
+        vaultAfterPriceMove.deposit(0, 1 << 255, 1 << 255, recipient, {"from": user})
+    with reverts("maxAmount0"):
+        vaultAfterPriceMove.deposit(1e8, 0, 1 << 255, recipient, {"from": user})
+    with reverts("maxAmount1"):
+        vaultAfterPriceMove.deposit(1e8, 1 << 255, 0, recipient, {"from": user})
     with reverts("to"):
-        vaultAfterPriceMove.deposit(1e8, 1e8, ZERO_ADDRESS, {"from": user})
-
-
-def test_deposit_existing_checks_when_price_up(vaultAfterPriceUp, user, recipient):
-    with reverts("shares"):
-        vaultAfterPriceUp.deposit(1e8, 0, recipient, {"from": user})
-    vaultAfterPriceUp.deposit(0, 1e8, recipient, {"from": user})
-
-
-def test_deposit_existing_checks_when_price_down(vaultAfterPriceDown, user, recipient):
-    with reverts("shares"):
-        vaultAfterPriceDown.deposit(0, 1e8, recipient, {"from": user})
-    vaultAfterPriceDown.deposit(1e8, 0, recipient, {"from": user})
+        vaultAfterPriceMove.deposit(
+            1e8, 1 << 255, 1 << 255, ZERO_ADDRESS, {"from": user}
+        )
 
 
 def test_withdraw(
@@ -232,8 +201,8 @@ def test_withdraw(
     chain.sleep(24 * 60 * 60)
 
     # Mint and rebalance
-    tx = vault.deposit(1e6, 1e8, user, {"from": user})
-    shares, _, _ = tx.return_value
+    shares = 1e8
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
     vault.rebalance({"from": gov})
 
     # Store balances, supply and positions
@@ -272,8 +241,8 @@ def test_cannot_withdraw_all(vault, gov):
     chain.sleep(24 * 60 * 60)
 
     # Mint
-    tx = vault.deposit(1e17, 1e19, gov, {"from": gov})
-    shares, _, _ = tx.return_value
+    shares = 1e8
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, gov, {"from": gov})
 
     # Burn all
     with reverts("MIN_TOTAL_SUPPLY"):

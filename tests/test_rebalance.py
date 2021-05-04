@@ -13,7 +13,7 @@ def test_rebalance_when_empty_then_mint(
     # Rebalance
     vault.rebalance({"from": gov})
 
-    vault.deposit(1e6, 1e8, user, {"from": user})
+    vault.deposit(1e7, 1 << 255, 1 << 255, user, {"from": user})
 
     # Check liquidity in pool
     base, rebalance = getPositions(vault)
@@ -26,7 +26,7 @@ def test_rebalance_when_empty_then_mint(
 def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, big):
 
     # Mint some liquidity
-    vault.deposit(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(1e18, 1 << 255, 1 << 255, user, {"from": user})
 
     # Do a swap to move the price
     qty = 1e16 * [100, 1][buy] * [1, 100][big]
@@ -79,7 +79,7 @@ def test_rebalance_twap_check(
     vault.setMaxTwapDeviation(500, {"from": gov})
 
     # Mint some liquidity
-    vault.deposit(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(1e18, 1 << 255, 1 << 255, user, {"from": user})
 
     # Do a swap to move the price a lot
     qty = 1e16 * 100 * [100, 1][buy]

@@ -3,10 +3,10 @@ from pytest import approx
 
 
 @pytest.mark.parametrize(
-    "maxAmount0,maxAmount1",
-    [[1e4, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e4]],
+    "shares",
+    [1e4, 1e18],
 )
-def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, maxAmount0, maxAmount1):
+def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, shares):
     vault = vaultAfterPriceMove
 
     # Store balances and total amounts
@@ -15,8 +15,8 @@ def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, maxAmount0,
     total0, total1 = vault.getTotalAmounts()
 
     # Mint some liquidity
-    tx = vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
-    _, amount0, amount1 = tx.return_value
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
+    amount0, amount1 = tx.return_value
 
     # Check amounts match total amounts
     assert approx(amount0, abs=1) == vault.getTotalAmounts()[0] - total0
@@ -24,19 +24,11 @@ def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, maxAmount0,
 
 
 @pytest.mark.parametrize(
-    "maxAmount0,maxAmount1",
-    [
-        [1e4, 1e10],
-        [1e7, 1e10],
-        [1e9, 1e10],
-        [1e10, 1e4],
-        [3, 1e10],
-        [1e10, 10],
-        [3, 10],
-    ],
+    "shares",
+    [1e4, 1e18],
 )
 def test_total_amounts_per_share_do_not_increase(
-    vaultAfterPriceMove, tokens, user, recipient, maxAmount0, maxAmount1
+    vaultAfterPriceMove, tokens, user, recipient, shares
 ):
     vault = vaultAfterPriceMove
 
@@ -47,7 +39,7 @@ def test_total_amounts_per_share_do_not_increase(
     valuePerShare1 = total1 / supply
 
     # Mint some liquidity
-    vault.deposit(maxAmount0, maxAmount1, recipient, {"from": user})
+    vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
 
     # Check amounts match total amounts
     total0, total1 = vault.getTotalAmounts()
@@ -67,7 +59,7 @@ def test_total_amounts_do_not_change_after_rebalance(
 ):
 
     # Mint some liquidity
-    vault.deposit(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(1e18, 1 << 255, 1 << 255, gov, {"from": gov})
 
     # Do a swap to move the price
     qty = 1e16 * [100, 1][buy] * [1, 100][big]

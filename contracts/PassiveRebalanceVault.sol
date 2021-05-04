@@ -111,52 +111,31 @@ contract PassiveRebalanceVault is
     }
 
     function deposit(
+        uint256 shares,
         uint256 maxAmount0,
         uint256 maxAmount1,
         address to
-    )
-        external
-        override
-        returns (
-            uint256 shares,
-            uint256 amount0,
-            uint256 amount1
-        )
-    {
+    ) external override returns (uint256 amount0, uint256 amount1) {
         require(to != address(0), "to");
+        require(shares > 0, "shares");
 
         uint128 baseLiquidity;
         uint128 skewLiquidity;
-        uint256 _totalSupply = totalSupply();
 
-        if (_totalSupply == 0) {
+        if (totalSupply() == 0) {
             // For initial deposit, just place just base order and ignore skew order
-            shares = _liquidityForAmounts(baseLower, baseUpper, maxAmount0, maxAmount1);
             require(shares < type(uint128).max, "shares overflow");
             require(shares >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
-
             baseLiquidity = uint128(shares);
             skewLiquidity = 0;
         } else {
-            // Decrease slightly so output amounts don't exceed max
-            maxAmount0 = maxAmount0 >= 2 ? maxAmount0 - 2 : maxAmount0;
-            maxAmount1 = maxAmount1 >= 2 ? maxAmount1 - 2 : maxAmount1;
-
-            (uint256 total0, uint256 total1) = getTotalAmounts();
-            assert(total0 > 0 || total1 > 0);
-
-            // Set shares to the maximum possible value that implies amounts not
-            // greater than maxAmount0 and maxAmount1
-            if (maxAmount0.mul(total1) < maxAmount1.mul(total0) || total1 == 0) {
-                shares = maxAmount0.mul(_totalSupply).div(total0);
-            } else {
-                shares = maxAmount1.mul(_totalSupply).div(total1);
-            }
-            require(shares > 0, "shares");
-
             // Calculate proportional liquidity
             baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
             skewLiquidity = _liquidityForShares(skewLower, skewUpper, shares);
+
+            // Round up
+            baseLiquidity += baseLiquidity > 0 ? 1 : 0;
+            skewLiquidity += skewLiquidity > 0 ? 1 : 0;
         }
 
         // Deposit liquidity into Uniswap
@@ -171,6 +150,8 @@ contract PassiveRebalanceVault is
 
         amount0 = baseAmount0.add(skewAmount0);
         amount1 = baseAmount1.add(skewAmount1);
+        require(amount0 <= maxAmount0, "maxAmount0");
+        require(amount1 <= maxAmount1, "maxAmount1");
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 

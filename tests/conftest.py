@@ -92,7 +92,7 @@ def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
 def vaultAfterPriceMove(vault, pool, router, gov):
 
     # Mint and move price to simulate existing activity
-    vault.deposit(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(8e18, 1 << 255, 1 << 255, gov, {"from": gov})
     prevTick = pool.slot0()[1] // 60 * 60
     router.swap(pool, True, 1e16, {"from": gov})
 
@@ -113,7 +113,7 @@ def vaultAfterPriceMove(vault, pool, router, gov):
 def vaultAfterPriceDown(vault, pool, router, gov):
 
     # Mint and move price to simulate existing activity
-    vault.deposit(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(8e18, 1 << 255, 1 << 255, gov, {"from": gov})
     router.swap(pool, True, 1e18, {"from": gov})  # True means swap token0 -> token1
 
     # Refresh vault
@@ -134,7 +134,7 @@ def vaultAfterPriceDown(vault, pool, router, gov):
 def vaultAfterPriceUp(vault, pool, router, gov):
 
     # Mint and move price to simulate existing activity
-    vault.deposit(1e17, 1e19, gov, {"from": gov})
+    vault.deposit(8e18, 1 << 255, 1 << 255, gov, {"from": gov})
     router.swap(pool, False, 1e20, {"from": gov})  # False means swap token1 -> token0
 
     tick = pool.slot0()[1] // 60 * 60
