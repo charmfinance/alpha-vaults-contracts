@@ -190,6 +190,13 @@ contract PassiveRebalanceVault is
         require(block.timestamp >= lastUpdate.add(rebalanceCooldown), "cooldown");
         lastUpdate = block.timestamp;
 
+        (, int24 mid, , , , , ) = pool.slot0();
+
+        // Check price not too low or too high
+        int24 maxThreshold = baseThreshold > skewThreshold ? baseThreshold : skewThreshold;
+        require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
+        require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
+
         // Withdraw all liquidity from Uniswap
         _burnLiquidity(baseRange, _deposited(baseRange), address(this), true);
         _burnLiquidity(skewRange, _deposited(skewRange), address(this), true);
@@ -197,13 +204,12 @@ contract PassiveRebalanceVault is
         // Emit event with useful info
         uint256 balance0 = token0.balanceOf(address(this));
         uint256 balance1 = token1.balanceOf(address(this));
-        (, int24 tick, , , , , ) = pool.slot0();
-        emit Rebalance(tick, balance0, balance1, totalSupply());
+        emit Rebalance(mid, balance0, balance1, totalSupply());
 
         // Check TWAP deviation. This check prevents price manipulation before
         // the rebalance and also avoids rebalancing when price has just spiked.
         int24 twap = _twap();
-        int24 deviation = tick > twap ? tick - twap : twap - tick;
+        int24 deviation = mid > twap ? mid - twap : twap - mid;
         require(deviation <= maxTwapDeviation, "maxTwapDeviation");
 
         // Update base range and place order
@@ -367,29 +373,30 @@ contract PassiveRebalanceVault is
     }
 
     function _baseRange() internal returns (Range memory) {
-        Range memory mid = _midRange();
-        return Range(_cap(mid.lower - baseThreshold), _cap(mid.upper + baseThreshold));
+        (int24 floorMid, int24 ceilMid) = _midFloorCeil(mid);
+        return Range(floorMid - baseThreshold, ceilMid + baseThreshold);
     }
 
     /// @dev Return range just above mid if there's excess token0 left over
     /// or range just below mid if there's excess token1 left over
     function _skewRange() internal returns (Range memory) {
-        Range memory mid = _midRange();
-        Range memory bid = Range(_cap(mid.lower - skewThreshold), _cap(mid.lower));
-        Range memory offer = Range(_cap(mid.upper), _cap(mid.upper + skewThreshold));
+        (int24 floorMid, int24 ceilMid) = _midFloorCeil(mid);
+        Range memory bid = Range(floorMid - skewThreshold, floorMid);
+        Range memory offer = Range(ceilMid, ceilMid + skewThreshold);
 
         // Return the range on which more liquidity can be placed
         return _maxLiquidity(bid) > _maxLiquidity(offer) ? bid : offer;
     }
 
     /// @dev Current Uniswap price in ticks, rounded down and rounded up
-    function _midRange() internal view returns (Range memory) {
-        (, int24 tick, , , , , ) = pool.slot0();
-        int24 tickFloor = _floor(tick);
-        return Range(tickFloor, tickFloor + tickSpacing);
+    function _midFloorCeil() internal view returns (Range memory) {
+        (, int24 mid, , , , , ) = pool.slot0();
+        int24 floorMid = _floor(mid);
+        int24 ceilMid = mid % tickSpacing == 0 ? mid : floorMid + tickSpacing;
+        return Range(floorMid, ceilMid);
     }
 
-    /// @dev Round towards negative infinity so that tick is a multiple of
+    /// @dev Round down towards negative infinity so that tick is a multiple of
     /// tickSpacing
     function _floor(int24 tick) internal view returns (int24) {
         int24 compressed = tick / tickSpacing;
@@ -399,24 +406,15 @@ contract PassiveRebalanceVault is
         return compressed * tickSpacing;
     }
 
-    function _cap(int24 tick) internal view returns (int24) {
-        if (tick < TickMath.MIN_TICK) {
-            return _floor(TickMath.MIN_TICK + tickSpacing - 1);
-        }
-        if (tick > TickMath.MAX_TICK) {
-            return _floor(TickMath.MAX_TICK);
-        }
-        return tick;
-    }
-
     function _amountsForLiquidity(Range memory range, uint128 liquidity)
         internal
         view
         returns (uint256, uint256)
     {
+        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
         return
             LiquidityAmounts.getAmountsForLiquidity(
-                _sqrtRatioX96(),
+                sqrtRatioX96,
                 TickMath.getSqrtRatioAtTick(range.lower),
                 TickMath.getSqrtRatioAtTick(range.upper),
                 liquidity
@@ -428,19 +426,15 @@ contract PassiveRebalanceVault is
         uint256 amount0,
         uint256 amount1
     ) internal view returns (uint128) {
+        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
         return
             LiquidityAmounts.getLiquidityForAmounts(
-                _sqrtRatioX96(),
+                sqrtRatioX96,
                 TickMath.getSqrtRatioAtTick(range.lower),
                 TickMath.getSqrtRatioAtTick(range.upper),
                 amount0,
                 amount1
             );
-    }
-
-    /// @dev Current Uniswap price in the form of sqrt(price) * 2^96
-    function _sqrtRatioX96() internal view returns (uint160 sqrtRatioX96) {
-        (sqrtRatioX96, , , , , , ) = pool.slot0();
     }
 
     function _twap() internal view returns (int24) {
