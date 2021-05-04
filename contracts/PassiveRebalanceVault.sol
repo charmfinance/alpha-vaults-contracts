@@ -62,8 +62,12 @@ contract PassiveRebalanceVault is
 
     /**
      * @param _pool Underlying Uniswap V3 pool
-     * @param _baseThreshold Width of base range order in ticks
+     * @param _baseThreshold Half the width of base range order in ticks
      * @param _skewThreshold Width of skew range order in ticks
+     * @param _maxTwapDeviation How much current price can deviate from TWAP
+     * during rebalance
+     * @param _twapDuration Duration of TWAP in seconds used for max TWAP
+     * deviation check
      * @param _rebalanceCooldown How much time needs to pass between rebalance()
      * calls in seconds
      * @param _maxTotalSupply Users can't deposit if total supply would exceed
@@ -121,7 +125,7 @@ contract PassiveRebalanceVault is
 
         uint256 _totalSupply = totalSupply();
         if (_totalSupply == 0) {
-            return _initialMint(maxAmount0, maxAmount1, to);
+            return _depositWhenEmpty(maxAmount0, maxAmount1, to);
         }
 
         // Decrease slightly so amounts don't exceed max
@@ -224,16 +228,9 @@ contract PassiveRebalanceVault is
         assert(baseLower != skewLower || baseUpper != skewUpper);
     }
 
-    /// @dev Check current mid is not too low or too high. Constructor and
-    /// rebalance() are reverted if price is too close to min or max ticks
-    function _checkMid() internal {
-        (, int24 mid, , , , , ) = pool.slot0();
-        int24 maxThreshold = baseThreshold > skewThreshold ? baseThreshold : skewThreshold;
-        require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
-        require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
-    }
-
-    function _initialMint(
+    /// @dev Called from deposit when total supply is 0. It places the base
+    /// order and ignores the skew order.
+    function _depositWhenEmpty(
         uint256 maxAmount0,
         uint256 maxAmount1,
         address to
@@ -249,8 +246,7 @@ contract PassiveRebalanceVault is
         require(shares > 0, "shares");
         require(shares < type(uint128).max, "shares overflow");
 
-        // Deposit liquidity into Uniswap. The initial mint only places an
-        // order in the base range and ignores the skew range.
+        // Deposit liquidity into Uniswap
         (amount0, amount1) = _mintLiquidity(baseLower, baseUpper, uint128(shares), msg.sender);
 
         // Mint shares
@@ -290,7 +286,7 @@ contract PassiveRebalanceVault is
         }
     }
 
-    /// @dev Callback for Uniswap V3 pool
+    /// @dev Callback for Uniswap V3 pool.
     function uniswapV3MintCallback(
         uint256 amount0,
         uint256 amount1,
@@ -353,20 +349,26 @@ contract PassiveRebalanceVault is
         (amount0, amount1) = _amountsForLiquidity(skewLower, skewUpper, liquidity);
     }
 
-    function getTwap() internal view returns (int24) {
-        uint32[] memory secondsAgo = new uint32[](2);
-        secondsAgo[0] = twapDuration;
-        secondsAgo[1] = 0;
-
-        (int56[] memory tickCumulatives, uint160[] memory _) = pool.observe(secondsAgo);
-        return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
+    /// @dev Revert if current price is too close to min or max ticks allowed
+    /// by Uniswap.
+    function _checkMid() internal {
+        (, int24 mid, , , , , ) = pool.slot0();
+        int24 maxThreshold = baseThreshold > skewThreshold ? baseThreshold : skewThreshold;
+        require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
+        require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
     }
 
+    /// @dev Return lower and upper ticks for the base order. This order is
+    /// symmetric around the current mid and its width in ticks is double of
+    /// `baseThreshold`.
     function _baseRange() internal view returns (int24, int24) {
         (int24 floorMid, int24 ceilMid) = _floorCeilMid();
         return (floorMid - baseThreshold, ceilMid + baseThreshold);
     }
 
+    /// @dev Return lower and upper ticks for the skew order. This order helps
+    /// the vault rebalance closer to 50/50 and is either just above or just
+    /// below the current mid. Its width in ticks is equal to `skewThreshold`.
     function _skewOrder() internal view returns (int24, int24) {
         (int24 floorMid, int24 ceilMid) = _floorCeilMid();
         uint128 bidLiquidity = _maxDepositable(floorMid - skewThreshold, floorMid);
@@ -378,7 +380,8 @@ contract PassiveRebalanceVault is
         }
     }
 
-    /// @dev Convert shares into amount of liquidity
+    /// @dev Convert shares into amount of liquidity. Shouldn't be called
+    /// when total supply is 0.
     function _liquidityForShares(
         int24 tickLower,
         int24 tickUpper,
@@ -391,7 +394,7 @@ contract PassiveRebalanceVault is
     }
 
     /// @dev Amount of liquidity deposited by vault into Uniswap V3 pool for a
-    /// certain range
+    /// certain range.
     function _position(int24 tickLower, int24 tickUpper)
         internal
         view
@@ -402,14 +405,14 @@ contract PassiveRebalanceVault is
     }
 
     /// @dev Maximum liquidity that can deposited in range by vault given
-    /// its balances of token0 and token1
+    /// its balances of token0 and token1.
     function _maxDepositable(int24 tickLower, int24 tickUpper) internal view returns (uint128) {
         uint256 balance0 = token0.balanceOf(address(this));
         uint256 balance1 = token1.balanceOf(address(this));
         return _liquidityForAmounts(tickLower, tickUpper, balance0, balance1);
     }
 
-    /// @dev Current Uniswap price in ticks, rounded down and rounded up
+    /// @dev Current Uniswap price in ticks, rounded down and rounded up.
     function _floorCeilMid() internal view returns (int24 floor, int24 ceil) {
         (, int24 mid, , , , , ) = pool.slot0();
         floor = _floor(mid);
@@ -417,13 +420,22 @@ contract PassiveRebalanceVault is
     }
 
     /// @dev Round down towards negative infinity so that tick is a multiple of
-    /// tickSpacing
+    /// tickSpacing.
     function _floor(int24 tick) internal view returns (int24) {
         int24 compressed = tick / tickSpacing;
         if (tick < 0 && tick % tickSpacing != 0) {
             compressed--;
         }
         return compressed * tickSpacing;
+    }
+
+    function getTwap() internal view returns (int24) {
+        uint32[] memory secondsAgo = new uint32[](2);
+        secondsAgo[0] = twapDuration;
+        secondsAgo[1] = 0;
+
+        (int56[] memory tickCumulatives, uint160[] memory _) = pool.observe(secondsAgo);
+        return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
     }
 
     function _amountsForLiquidity(
@@ -459,8 +471,8 @@ contract PassiveRebalanceVault is
     }
 
     /**
-     * @notice Set base threshold b. From the next rebalance, the strategy will
-     * move the base order to the range [mid - b, mid + b + 1].
+     * @notice Set base threshold B. From the next rebalance, the strategy will
+     * move the base order to the range [floor(mid) - B, ceil(mid) + B].
      */
     function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
@@ -469,9 +481,9 @@ contract PassiveRebalanceVault is
     }
 
     /**
-     * @notice Set skew threshold r. From the next rebalance, the strategy
-     * will move the skew order to the range [mid - r, mid] or
-     * [mid + 1, mid + r + 1] depending on which token it holds more of.
+     * @notice Set skew threshold S. From the next rebalance, the strategy
+     * will move the skew order to the range [floor(mid) - S, floor(mid)] or
+     * [ceil(mid), ceil(mid) + S] depending on which token it holds more of.
      */
     function setSkewThreshold(int24 _skewThreshold) external onlyGovernance {
         require(_skewThreshold % tickSpacing == 0, "skewThreshold");
@@ -479,18 +491,26 @@ contract PassiveRebalanceVault is
         skewThreshold = _skewThreshold;
     }
 
+    /**
+     * @notice rebalance() will revert if the current price in ticks differs
+     * from the TWAP by more than this deviation. This avoids placing orders
+     * during a price spike, and mitigates price manipulation.
+     */
     function setMaxTwapDeviation(int24 _maxTwapDeviation) external onlyGovernance {
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
         maxTwapDeviation = _maxTwapDeviation;
     }
 
+    /**
+     * @notice Set duration of TWAP in seconds used for max TWAP deviations
+     * check.
+     */
     function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
         twapDuration = _twapDuration;
     }
 
     /**
-     * @notice Set rebalance cooldown - the number of seconds that need to pass
-     * since the last rebalance before rebalance() can be called again.
+     * @notice Set the number of seconds needed to pass between rebalances.
      */
     function setRebalanceCooldown(uint256 _rebalanceCooldown) external onlyGovernance {
         rebalanceCooldown = _rebalanceCooldown;
@@ -522,7 +542,7 @@ contract PassiveRebalanceVault is
     }
 
     /**
-     * @notice Renounce emergency powers
+     * @notice Renounce emergency powers.
      */
     function finalize() external onlyGovernance {
         finalized = true;
