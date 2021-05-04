@@ -133,9 +133,9 @@ def test_mint_initial(
 
 
 def test_mint_initial_checks(vault, user, recipient):
-    with reverts("shares"):
+    with reverts("MIN_TOTAL_SUPPLY"):
         vault.deposit(0, 1e8, recipient, {"from": user})
-    with reverts("shares"):
+    with reverts("MIN_TOTAL_SUPPLY"):
         vault.deposit(1e8, 0, recipient, {"from": user})
     with reverts("to"):
         vault.deposit(1e8, 1e8, ZERO_ADDRESS, {"from": user})
@@ -374,7 +374,7 @@ def test_rebalance_when_empty_then_mint(
     assert rebalance[0] == 0
 
 
-def test_burn_all(vault, pool, tokens, getPositions, gov, user, recipient):
+def test_cannot_burn_all(vault, gov):
 
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)
@@ -383,20 +383,9 @@ def test_burn_all(vault, pool, tokens, getPositions, gov, user, recipient):
     tx = vault.deposit(1e17, 1e19, gov, {"from": gov})
     shares, _, _ = tx.return_value
 
-    # Rebalance
-    vault.rebalance({"from": gov})
-
     # Burn all
-    vault.withdraw(shares, gov, {"from": gov})
-
-    # Check vault is empty
-    assert vault.totalSupply() == 0
-    assert tokens[0].balanceOf(vault) == 0
-    assert tokens[1].balanceOf(vault) == 0
-
-    base, rebalance = getPositions(vault)
-    assert base[0] == 0
-    assert rebalance[0] == 0
+    with reverts("MIN_TOTAL_SUPPLY"):
+        vault.withdraw(shares, gov, {"from": gov})
 
 
 @pytest.mark.parametrize("buy", [False, True])

@@ -125,30 +125,42 @@ contract PassiveRebalanceVault is
     {
         require(to != address(0), "to");
 
+        uint128 baseLiquidity;
+        uint128 skewLiquidity;
         uint256 _totalSupply = totalSupply();
+
         if (_totalSupply == 0) {
-            return _initialDeposit(maxAmount0, maxAmount1, to);
-        }
+            // For initial deposit, just place just base order and ignore skew order
+            shares = _liquidityForAmounts(baseLower, baseUpper, maxAmount0, maxAmount1);
+            require(shares < type(uint128).max, "shares overflow");
+            require(shares >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
 
-        // Decrease slightly so amounts don't exceed max
-        maxAmount0 = maxAmount0 >= 2 ? maxAmount0 - 2 : maxAmount0;
-        maxAmount1 = maxAmount1 >= 2 ? maxAmount1 - 2 : maxAmount1;
+            baseLiquidity = uint128(shares);
+            skewLiquidity = 0;
 
-        (uint256 total0, uint256 total1) = getTotalAmounts();
-        assert(total0 > 0 || total1 > 0);
-
-        // Set shares to the maximum possible value that implies amounts not
-        // greater than maxAmount0 and maxAmount1
-        if (maxAmount0.mul(total1) < maxAmount1.mul(total0) || total1 == 0) {
-            shares = maxAmount0.mul(_totalSupply).div(total0);
         } else {
-            shares = maxAmount1.mul(_totalSupply).div(total1);
+            // Decrease slightly so output amounts don't exceed max
+            maxAmount0 = maxAmount0 >= 2 ? maxAmount0 - 2 : maxAmount0;
+            maxAmount1 = maxAmount1 >= 2 ? maxAmount1 - 2 : maxAmount1;
+
+            (uint256 total0, uint256 total1) = getTotalAmounts();
+            assert(total0 > 0 || total1 > 0);
+
+            // Set shares to the maximum possible value that implies amounts not
+            // greater than maxAmount0 and maxAmount1
+            if (maxAmount0.mul(total1) < maxAmount1.mul(total0) || total1 == 0) {
+                shares = maxAmount0.mul(_totalSupply).div(total0);
+            } else {
+                shares = maxAmount1.mul(_totalSupply).div(total1);
+            }
+            require(shares > 0, "shares");
+
+            // Calculate proportional liquidity
+            baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
+            skewLiquidity = _liquidityForShares(skewLower, skewUpper, shares);
         }
-        require(shares > 0, "shares");
 
         // Deposit liquidity into Uniswap
-        uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
-        uint128 skewLiquidity = _liquidityForShares(skewLower, skewUpper, shares);
         (uint256 baseAmount0, uint256 baseAmount1) =
             _mintLiquidity(baseLower, baseUpper, baseLiquidity, msg.sender);
         (uint256 skewAmount0, uint256 skewAmount1) =
@@ -156,41 +168,10 @@ contract PassiveRebalanceVault is
 
         // Mint shares
         _mint(to, shares);
-        _totalSupply = totalSupply();
-        require(maxTotalSupply == 0 || _totalSupply <= maxTotalSupply, "maxTotalSupply");
+        require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
 
         amount0 = baseAmount0.add(skewAmount0);
         amount1 = baseAmount1.add(skewAmount1);
-        emit Deposit(msg.sender, to, shares, amount0, amount1);
-
-        // The first MIN_TOTAL_SUPPLY shares are locked
-        require(_totalSupply >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
-    }
-
-    /// @dev Called from deposit when total supply is 0. It places the base
-    /// order and ignores the skew order.
-    function _initialDeposit(
-        uint256 maxAmount0,
-        uint256 maxAmount1,
-        address to
-    )
-        internal
-        returns (
-            uint256 shares,
-            uint256 amount0,
-            uint256 amount1
-        )
-    {
-        shares = _liquidityForAmounts(baseLower, baseUpper, maxAmount0, maxAmount1);
-        require(shares < type(uint128).max, "shares overflow");
-        require(shares > MIN_TOTAL_SUPPLY, "shares");
-
-        // Deposit liquidity into Uniswap
-        (amount0, amount1) = _mintLiquidity(baseLower, baseUpper, uint128(shares), msg.sender);
-
-        // Mint shares
-        _mint(to, shares);
-        require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
@@ -217,6 +198,9 @@ contract PassiveRebalanceVault is
         amount0 = baseAmount0.add(skewAmount0);
         amount1 = baseAmount1.add(skewAmount1);
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
+
+        // The first MIN_TOTAL_SUPPLY shares are locked
+        require(totalSupply() >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
     }
 
     function rebalance() external override {
