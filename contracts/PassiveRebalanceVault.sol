@@ -98,6 +98,7 @@ contract PassiveRebalanceVault is
         require(_baseThreshold > 0, "baseThreshold");
         require(_skewThreshold > 0, "skewThreshold");
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+        _checkMid();
 
         (baseLower, baseUpper) = _baseRange();
         (skewLower, skewUpper) = _skewOrder();
@@ -188,12 +189,7 @@ contract PassiveRebalanceVault is
         require(block.timestamp >= lastUpdate.add(rebalanceCooldown), "cooldown");
         lastUpdate = block.timestamp;
 
-        (, int24 mid, , , , , ) = pool.slot0();
-
-        // Check price not too low or too high
-        int24 maxThreshold = baseThreshold > skewThreshold ? baseThreshold : skewThreshold;
-        require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
-        require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
+        _checkMid();
 
         // Withdraw all liquidity from Uniswap
         uint128 basePosition = _position(baseLower, baseUpper);
@@ -202,6 +198,7 @@ contract PassiveRebalanceVault is
         _burnLiquidity(skewLower, skewUpper, skewPosition, address(this), true);
 
         // Emit event with useful info
+        (, int24 mid, , , , , ) = pool.slot0();
         uint256 balance0 = token0.balanceOf(address(this));
         uint256 balance1 = token1.balanceOf(address(this));
         emit Rebalance(mid, balance0, balance1, totalSupply());
@@ -225,6 +222,15 @@ contract PassiveRebalanceVault is
         // Check base and skew ranges aren't the same, otherwise calculations
         // would fail elsewhere
         assert(baseLower != skewLower || baseUpper != skewUpper);
+    }
+
+    /// @dev Check current mid is not too low or too high. Constructor and
+    /// rebalance() are reverted if price is too close to min or max ticks
+    function _checkMid() internal {
+        (, int24 mid, , , , , ) = pool.slot0();
+        int24 maxThreshold = baseThreshold > skewThreshold ? baseThreshold : skewThreshold;
+        require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
+        require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
     }
 
     function _initialMint(
@@ -356,24 +362,12 @@ contract PassiveRebalanceVault is
         return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
     }
 
-    function _baseRange()
-        internal view
-        returns (
-            int24,
-            int24
-        )
-    {
+    function _baseRange() internal view returns (int24, int24) {
         (int24 floorMid, int24 ceilMid) = _floorCeilMid();
         return (floorMid - baseThreshold, ceilMid + baseThreshold);
     }
 
-    function _skewOrder()
-        internal view
-        returns (
-            int24,
-            int24
-        )
-    {
+    function _skewOrder() internal view returns (int24, int24) {
         (int24 floorMid, int24 ceilMid) = _floorCeilMid();
         uint128 bidLiquidity = _maxDepositable(floorMid - skewThreshold, floorMid);
         uint128 askLiquidity = _maxDepositable(ceilMid, ceilMid + skewThreshold);
@@ -528,6 +522,35 @@ contract PassiveRebalanceVault is
     }
 
     /**
+     * @notice Renounce emergency powers
+     */
+    function finalize() external onlyGovernance {
+        finalized = true;
+    }
+
+    /**
+     * @notice Transfer tokens to governance in case of emergency. Cannot be
+     * called if already finalized.
+     */
+    function emergencyWithdraw(IERC20 token, uint256 amount) external onlyGovernance {
+        require(!finalized, "finalized");
+        token.safeTransfer(msg.sender, amount);
+    }
+
+    /**
+     * @notice Burn liquidity and transfer tokens to governance in case of
+     * emergency. Cannot be called if already finalized.
+     */
+    function emergencyBurn(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity
+    ) external onlyGovernance {
+        require(!finalized, "finalized");
+        _burnLiquidity(tickLower, tickUpper, liquidity, msg.sender, true);
+    }
+
+    /**
      * @notice setGovernance() should be called by the existing governance
      * address prior to calling this function.
      */
@@ -539,25 +562,5 @@ contract PassiveRebalanceVault is
     modifier onlyGovernance {
         require(msg.sender == governance, "governance");
         _;
-    }
-
-    function finalize() external onlyGovernance {
-        finalized = true;
-    }
-
-    function emergencyWithdraw(IERC20 token, uint256 amount) external onlyGovernance {
-        require(!finalized, "finalized");
-        token.safeTransfer(msg.sender, amount);
-    }
-
-    function emergencyBurn(int24 tickLower, int24 tickUpper, uint128 liquidity) external onlyGovernance {
-        require(!finalized, "finalized");
-        _burnLiquidity(
-            tickLower,
-            tickUpper,
-            liquidity,
-            msg.sender,
-            true
-        );
     }
 }

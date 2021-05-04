@@ -59,6 +59,40 @@ def test_constructor_checks(PassiveRebalanceVault, pool, gov):
         )
 
 
+def test_ranges_when_tick_is_multiple_of_spacing(
+    PassiveRebalanceVault, router, poolFromPrice, tokens, gov
+):
+
+    # Set initial price in ticks to zero
+    pool = poolFromPrice(1 << 96)
+    assert pool.slot0()[1] == 0
+
+    vault = gov.deploy(
+        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 23 * 60 * 60, 100e18
+    )
+    assert vault.baseLower() == -2400
+    assert vault.baseUpper() == 2400
+    assert vault.skewLower() == 0
+    assert vault.skewUpper() == 1200
+
+
+def test_price_is_min_or_max_tick_checks(PassiveRebalanceVault, poolFromPrice, gov):
+    # min sqrt ratio from TickMath.sol
+    pool = poolFromPrice(4295128739)
+
+    with reverts("price too low"):
+        vault = gov.deploy(
+            PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 23 * 60 * 60, 100e18
+        )
+
+    # max sqrt ratio from TickMath.sol
+    pool = poolFromPrice(1461446703485210103287273052203988822378723970342 - 1)
+    with reverts("price too high"):
+        vault = gov.deploy(
+            PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 23 * 60 * 60, 100e18
+        )
+
+
 @pytest.mark.parametrize(
     "maxAmount0,maxAmount1", [[1e3, 1e10], [1e7, 1e10], [1e9, 1e10], [1e10, 1e3]]
 )
@@ -365,10 +399,6 @@ def test_burn_all(vault, pool, tokens, getPositions, gov, user, recipient):
     assert rebalance[0] == 0
 
 
-def test_balances_when_empty():
-    1
-
-
 @pytest.mark.parametrize("buy", [False, True])
 @pytest.mark.parametrize("big", [False, True])
 def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, big):
@@ -416,32 +446,6 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     assert approx(ev["totalAmount0"]) == total0
     assert approx(ev["totalAmount1"]) == total1
     assert ev["totalSupply"] == vault.totalSupply()
-
-
-# TODO: FIX THIS TEST
-# @pytest.mark.parametrize("buy", [False, True])
-# def test_rebalance_when_price_limit(vault, pool, tokens, router, getPositions, gov, user, buy):
-#
-#     # Mint some liquidity
-#     vault.deposit(1e17, 1e19, gov, {"from": gov})
-#
-#     # Do a huge swap to move the price to min or max tick
-#     qty = 1 << 127
-#     tokens[0].mint(gov, qty)
-#     tokens[1].mint(gov, qty)
-#     router.swap(pool, buy, qty, {"from": gov})
-#
-#     # Rebalance
-#     tx = vault.rebalance({"from": gov})
-#
-#     # Check ranges are set correctly
-#     tick = pool.slot0()[1]
-#     tickFloor = tick // 60 * 60
-#     assert vault.baseRange() == (tickFloor - 2400, tickFloor + 60 + 2400)
-#     if buy:
-#         assert vault.skewRange() == (tickFloor + 60, tickFloor + 60 + 1200)
-#     else:
-#         assert vault.skewRange() == (tickFloor - 1200, tickFloor)
 
 
 @pytest.mark.parametrize("buy", [False, True])

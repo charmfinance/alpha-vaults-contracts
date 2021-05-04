@@ -67,7 +67,6 @@ def pool(MockToken, router, pm, gov, users):
     # Increase cardinality and fast forward so TWAP works
     pool.increaseObservationCardinalityNext(100, {"from": gov})
     chain.sleep(3600)
-
     yield pool
 
 
@@ -173,5 +172,20 @@ def debug(pool, tokens, helper):
         print(f"Rebalance position:  {pool.positions(skewKey)}")
         print(f"Spare balance 0:  {tokens[0].balanceOf(vault)}")
         print(f"Spare balance 1:  {tokens[1].balanceOf(vault)}")
+
+    yield f
+
+
+@pytest.fixture
+def poolFromPrice(pm, PassiveRebalanceVault, MockToken, tokens, gov):
+    def f(price):
+        UniswapV3Core = pm(UNISWAP_V3_CORE)
+        fee = 3000
+
+        factory = gov.deploy(UniswapV3Core.UniswapV3Factory)
+        tx = factory.createPool(tokens[0], tokens[1], fee, {"from": gov})
+        pool = UniswapV3Core.interface.IUniswapV3Pool(tx.return_value)
+        pool.initialize(price, {"from": gov})
+        return pool
 
     yield f
