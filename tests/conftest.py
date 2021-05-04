@@ -157,11 +157,9 @@ def vaultAfterPriceUp(vault, pool, router, gov):
 @pytest.fixture
 def getPositions(pool, helper):
     def f(vault):
-        (b0, b1) = vault.baseRange()
-        (r0, r1) = vault.skewRange()
-        bkey = helper.computePositionKey(vault, b0, b1)
-        rkey = helper.computePositionKey(vault, r0, r1)
-        return pool.positions(bkey), pool.positions(rkey)
+        baseKey = helper.computePositionKey(vault, vault.baseLower(), vault.baseUpper())
+        skewKey = helper.computePositionKey(vault, vault.skewLower(), vault.skewUpper())
+        return pool.positions(baseKey), pool.positions(skewKey)
 
     yield f
 
@@ -169,12 +167,10 @@ def getPositions(pool, helper):
 @pytest.fixture
 def debug(pool, tokens, helper):
     def f(vault):
-        (b0, b1) = vault.baseRange()
-        (r0, r1) = vault.skewRange()
-        bkey = helper.computePositionKey(vault, b0, b1)
-        rkey = helper.computePositionKey(vault, r0, r1)
-        print(f"Passive position:    {pool.positions(bkey)}")
-        print(f"Rebalance position:  {pool.positions(rkey)}")
+        baseKey = helper.computePositionKey(vault, vault.baseLower(), vault.baseUpper())
+        skewKey = helper.computePositionKey(vault, vault.skewLower(), vault.skewUpper())
+        print(f"Passive position:    {pool.positions(baseKey)}")
+        print(f"Rebalance position:  {pool.positions(skewKey)}")
         print(f"Spare balance 0:  {tokens[0].balanceOf(vault)}")
         print(f"Spare balance 1:  {tokens[1].balanceOf(vault)}")
 

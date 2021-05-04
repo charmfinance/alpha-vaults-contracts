@@ -36,11 +36,6 @@ contract PassiveRebalanceVault is
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
-    struct Range {
-        int24 lower;
-        int24 upper;
-    }
-
     IUniswapV3Pool public pool;
     IERC20 public token0;
     IERC20 public token1;
@@ -54,8 +49,10 @@ contract PassiveRebalanceVault is
     uint256 public rebalanceCooldown;
     uint256 public maxTotalSupply;
 
-    Range public baseRange;
-    Range public skewRange;
+    int24 public baseLower;
+    int24 public baseUpper;
+    int24 public skewLower;
+    int24 public skewUpper;
 
     address public governance;
     address public pendingGovernance;
@@ -101,8 +98,8 @@ contract PassiveRebalanceVault is
         require(_skewThreshold > 0, "skewThreshold");
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
 
-        baseRange = _baseRange();
-        skewRange = _skewRange();
+        (baseLower, baseUpper) = _baseRange();
+        (skewLower, skewUpper) = _skewOrder();
     }
 
     function deposit(
@@ -142,20 +139,20 @@ contract PassiveRebalanceVault is
         require(shares > 0, "shares");
 
         // Deposit liquidity into Uniswap
-        uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
-        uint128 skewLiquidity = _liquidityForShares(skewRange, shares);
-        (uint256 base0, uint256 base1) =
-            _mintLiquidity(baseRange, baseLiquidity, msg.sender);
-        (uint256 skew0, uint256 skew1) =
-            _mintLiquidity(skewRange, skewLiquidity, msg.sender);
+        uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
+        uint128 skewLiquidity = _liquidityForShares(skewLower, skewUpper, shares);
+        (uint256 baseAmount0, uint256 baseAmount1) =
+            _mintLiquidity(baseLower, baseUpper, baseLiquidity, msg.sender);
+        (uint256 skewAmount0, uint256 skewAmount1) =
+            _mintLiquidity(skewLower, skewUpper, skewLiquidity, msg.sender);
 
         // Mint shares
         _mint(to, shares);
         require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
 
         // Return amounts deposited
-        amount0 = base0.add(skew0);
-        amount1 = base1.add(skew1);
+        amount0 = baseAmount0.add(skewAmount0);
+        amount1 = baseAmount1.add(skewAmount1);
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
@@ -169,19 +166,19 @@ contract PassiveRebalanceVault is
         require(to != address(0), "to");
 
         // Withdraw liquidity from Uniswap
-        uint128 baseLiquidity = _liquidityForShares(baseRange, shares);
-        uint128 skewLiquidity = _liquidityForShares(skewRange, shares);
-        (uint256 base0, uint256 base1) =
-            _burnLiquidity(baseRange, baseLiquidity, to, false);
-        (uint256 skew0, uint256 skew1) =
-            _burnLiquidity(skewRange, skewLiquidity, to, false);
+        uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
+        uint128 skewLiquidity = _liquidityForShares(skewLower, skewUpper, shares);
+        (uint256 baseAmount0, uint256 baseAmount1) =
+            _burnLiquidity(baseLower, baseUpper, baseLiquidity, to, false);
+        (uint256 skewAmount0, uint256 skewAmount1) =
+            _burnLiquidity(skewLower, skewUpper, skewLiquidity, to, false);
 
         // Burn shares
         _burn(msg.sender, shares);
 
         // Return amounts withdrawn
-        amount0 = base0.add(skew0);
-        amount1 = base1.add(skew1);
+        amount0 = baseAmount0.add(skewAmount0);
+        amount1 = baseAmount1.add(skewAmount1);
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
     }
 
@@ -198,8 +195,10 @@ contract PassiveRebalanceVault is
         require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
 
         // Withdraw all liquidity from Uniswap
-        _burnLiquidity(baseRange, _deposited(baseRange), address(this), true);
-        _burnLiquidity(skewRange, _deposited(skewRange), address(this), true);
+        uint128 basePosition = _position(baseLower, baseUpper);
+        uint128 skewPosition = _position(skewLower, skewUpper);
+        _burnLiquidity(baseLower, baseUpper, basePosition, address(this), true);
+        _burnLiquidity(skewLower, skewUpper, skewPosition, address(this), true);
 
         // Emit event with useful info
         uint256 balance0 = token0.balanceOf(address(this));
@@ -208,21 +207,23 @@ contract PassiveRebalanceVault is
 
         // Check TWAP deviation. This check prevents price manipulation before
         // the rebalance and also avoids rebalancing when price has just spiked.
-        int24 twap = _twap();
+        int24 twap = getTwap();
         int24 deviation = mid > twap ? mid - twap : twap - mid;
         require(deviation <= maxTwapDeviation, "maxTwapDeviation");
 
         // Update base range and place order
-        baseRange = _baseRange();
-        _mintLiquidity(baseRange, _maxLiquidity(baseRange), address(this));
+        (baseLower, baseUpper) = _baseRange();
+        uint128 baseLiquidity = _maxDepositable(baseLower, baseUpper);
+        _mintLiquidity(baseLower, baseUpper, baseLiquidity, address(this));
 
         // Update skew range and place order
-        skewRange = _skewRange();
-        _mintLiquidity(skewRange, _maxLiquidity(skewRange), address(this));
+        (skewLower, skewUpper) = _skewOrder();
+        uint128 skewLiquidity = _maxDepositable(skewLower, skewUpper);
+        _mintLiquidity(skewLower, skewUpper, skewLiquidity, address(this));
 
-        // Check base and skew ranges aren't the same, otherwise
-        // calculations would fail elsewhere
-        assert(baseRange.lower != skewRange.lower || baseRange.upper != skewRange.upper);
+        // Check base and skew ranges aren't the same, otherwise calculations
+        // would fail elsewhere
+        assert(baseLower != skewLower || baseUpper != skewUpper);
     }
 
     function _initialMint(
@@ -237,13 +238,13 @@ contract PassiveRebalanceVault is
             uint256 amount1
         )
     {
-        shares = _liquidityForAmounts(baseRange, maxAmount0, maxAmount1);
+        shares = _liquidityForAmounts(baseLower, baseUpper, maxAmount0, maxAmount1);
         require(shares > 0, "shares");
         require(shares < type(uint128).max, "shares overflow");
 
         // Deposit liquidity into Uniswap. The initial mint only places an
         // order in the base range and ignores the skew range.
-        (amount0, amount1) = _mintLiquidity(baseRange, uint128(shares), msg.sender);
+        (amount0, amount1) = _mintLiquidity(baseLower, baseUpper, uint128(shares), msg.sender);
 
         // Mint shares
         _mint(to, shares);
@@ -252,38 +253,32 @@ contract PassiveRebalanceVault is
     }
 
     function _mintLiquidity(
-        Range memory range,
+        int24 tickLower,
+        int24 tickUpper,
         uint128 liquidity,
         address payer
     ) internal returns (uint256, uint256) {
         if (liquidity > 0) {
-            return
-                pool.mint(
-                    address(this),
-                    range.lower,
-                    range.upper,
-                    liquidity,
-                    abi.encode(payer)
-                );
+            return pool.mint(address(this), tickLower, tickUpper, liquidity, abi.encode(payer));
         }
     }
 
     function _burnLiquidity(
-        Range memory range,
+        int24 tickLower,
+        int24 tickUpper,
         uint128 liquidity,
         address to,
         bool collectAll
     ) internal returns (uint256, uint256) {
         if (liquidity > 0) {
             // Burn liquidity
-            (uint256 amount0, uint256 amount1) =
-                pool.burn(range.lower, range.upper, liquidity);
+            (uint256 amount0, uint256 amount1) = pool.burn(tickLower, tickUpper, liquidity);
 
             // Collect amount owed
             uint128 collect0 = collectAll ? type(uint128).max : uint128(amount0);
             uint128 collect1 = collectAll ? type(uint128).max : uint128(amount1);
             if (collect0 > 0 || collect1 > 0) {
-                return pool.collect(to, range.lower, range.upper, collect0, collect1);
+                return pool.collect(to, tickLower, tickUpper, collect0, collect1);
             }
         }
     }
@@ -306,20 +301,10 @@ contract PassiveRebalanceVault is
             }
         } else {
             if (amount0 > 0) {
-                TransferHelper.safeTransferFrom(
-                    address(token0),
-                    payer,
-                    msg.sender,
-                    amount0
-                );
+                TransferHelper.safeTransferFrom(address(token0), payer, msg.sender, amount0);
             }
             if (amount1 > 0) {
-                TransferHelper.safeTransferFrom(
-                    address(token1),
-                    payer,
-                    msg.sender,
-                    amount1
-                );
+                TransferHelper.safeTransferFrom(address(token1), payer, msg.sender, amount1);
             }
         }
     }
@@ -328,72 +313,112 @@ contract PassiveRebalanceVault is
      * @notice Calculates total holdings of token0 and token1, i.e. how
      * much this vault would hold if it withdrew all its liquidity.
      */
-    function getTotalAmounts() public view override returns (uint256, uint256) {
-        (uint256 base0, uint256 base1) = getBaseAmounts();
-        (uint256 skew0, uint256 skew1) = getSkewAmounts();
-        return (
-            token0.balanceOf(address(this)).add(base0).add(skew0),
-            token1.balanceOf(address(this)).add(base1).add(skew1)
-        );
+    function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
+        (, uint256 baseAmount0, uint256 baseAmount1) = getBaseLiquidityAndAmounts();
+        (, uint256 skewAmount0, uint256 skewAmount1) = getSkewLiquidityAndAmounts();
+        total0 = token0.balanceOf(address(this)).add(baseAmount0).add(skewAmount0);
+        total1 = token1.balanceOf(address(this)).add(baseAmount1).add(skewAmount1);
     }
 
-    function getBaseAmounts() public view returns (uint256, uint256) {
-        return _amountsForLiquidity(baseRange, _deposited(baseRange));
+    function getBaseLiquidityAndAmounts()
+        public
+        view
+        returns (
+            uint128 liquidity,
+            uint256 amount0,
+            uint256 amount1
+        )
+    {
+        liquidity = _position(baseLower, baseUpper);
+        (amount0, amount1) = _amountsForLiquidity(baseLower, baseUpper, liquidity);
     }
 
-    function getSkewAmounts() public view returns (uint256, uint256) {
-        return _amountsForLiquidity(skewRange, _deposited(skewRange));
+    function getSkewLiquidityAndAmounts()
+        public
+        view
+        returns (
+            uint128 liquidity,
+            uint256 amount0,
+            uint256 amount1
+        )
+    {
+        liquidity = _position(skewLower, skewUpper);
+        (amount0, amount1) = _amountsForLiquidity(skewLower, skewUpper, liquidity);
+    }
+
+    function getTwap() internal view returns (int24) {
+        uint32[] memory secondsAgo = new uint32[](2);
+        secondsAgo[0] = twapDuration;
+        secondsAgo[1] = 0;
+
+        (int56[] memory tickCumulatives, uint160[] memory _) = pool.observe(secondsAgo);
+        return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
+    }
+
+    function _baseRange()
+        internal view
+        returns (
+            int24,
+            int24
+        )
+    {
+        (int24 floorMid, int24 ceilMid) = _floorCeilMid();
+        return (floorMid - baseThreshold, ceilMid + baseThreshold);
+    }
+
+    function _skewOrder()
+        internal view
+        returns (
+            int24,
+            int24
+        )
+    {
+        (int24 floorMid, int24 ceilMid) = _floorCeilMid();
+        uint128 bidLiquidity = _maxDepositable(floorMid - skewThreshold, floorMid);
+        uint128 askLiquidity = _maxDepositable(ceilMid, ceilMid + skewThreshold);
+        if (bidLiquidity > askLiquidity) {
+            return (floorMid - skewThreshold, floorMid);
+        } else {
+            return (ceilMid, ceilMid + skewThreshold);
+        }
     }
 
     /// @dev Convert shares into amount of liquidity
-    function _liquidityForShares(Range memory range, uint256 shares)
-        internal
-        view
-        returns (uint128)
-    {
-        uint256 liquidity = uint256(_deposited(range)).mul(shares).div(totalSupply());
+    function _liquidityForShares(
+        int24 tickLower,
+        int24 tickUpper,
+        uint256 shares
+    ) internal view returns (uint128) {
+        uint256 position = uint256(_position(tickLower, tickUpper));
+        uint256 liquidity = position.mul(shares).div(totalSupply());
         require(liquidity < type(uint128).max, "liquidity overflow");
         return uint128(liquidity);
     }
 
     /// @dev Amount of liquidity deposited by vault into Uniswap V3 pool for a
     /// certain range
-    function _deposited(Range memory range) internal view returns (uint128 liquidity) {
-        bytes32 positionKey =
-            keccak256(abi.encodePacked(address(this), range.lower, range.upper));
+    function _position(int24 tickLower, int24 tickUpper)
+        internal
+        view
+        returns (uint128 liquidity)
+    {
+        bytes32 positionKey = keccak256(abi.encodePacked(address(this), tickLower, tickUpper));
         (liquidity, , , , ) = pool.positions(positionKey);
     }
 
     /// @dev Maximum liquidity that can deposited in range by vault given
     /// its balances of token0 and token1
-    function _maxLiquidity(Range memory range) internal view returns (uint128) {
+    function _maxDepositable(int24 tickLower, int24 tickUpper) internal view returns (uint128) {
         uint256 balance0 = token0.balanceOf(address(this));
         uint256 balance1 = token1.balanceOf(address(this));
-        return _liquidityForAmounts(range, balance0, balance1);
-    }
-
-    function _baseRange() internal returns (Range memory) {
-        (int24 floorMid, int24 ceilMid) = _midFloorCeil(mid);
-        return Range(floorMid - baseThreshold, ceilMid + baseThreshold);
-    }
-
-    /// @dev Return range just above mid if there's excess token0 left over
-    /// or range just below mid if there's excess token1 left over
-    function _skewRange() internal returns (Range memory) {
-        (int24 floorMid, int24 ceilMid) = _midFloorCeil(mid);
-        Range memory bid = Range(floorMid - skewThreshold, floorMid);
-        Range memory offer = Range(ceilMid, ceilMid + skewThreshold);
-
-        // Return the range on which more liquidity can be placed
-        return _maxLiquidity(bid) > _maxLiquidity(offer) ? bid : offer;
+        return _liquidityForAmounts(tickLower, tickUpper, balance0, balance1);
     }
 
     /// @dev Current Uniswap price in ticks, rounded down and rounded up
-    function _midFloorCeil() internal view returns (Range memory) {
+    function _floorCeilMid() internal view returns (int24 floor, int24 ceil) {
         (, int24 mid, , , , , ) = pool.slot0();
-        int24 floorMid = _floor(mid);
-        int24 ceilMid = mid % tickSpacing == 0 ? mid : floorMid + tickSpacing;
-        return Range(floorMid, ceilMid);
+        floor = _floor(mid);
+        ceil = mid % tickSpacing == 0 ? mid : floor + tickSpacing;
     }
 
     /// @dev Round down towards negative infinity so that tick is a multiple of
@@ -406,23 +431,24 @@ contract PassiveRebalanceVault is
         return compressed * tickSpacing;
     }
 
-    function _amountsForLiquidity(Range memory range, uint128 liquidity)
-        internal
-        view
-        returns (uint256, uint256)
-    {
+    function _amountsForLiquidity(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity
+    ) internal view returns (uint256, uint256) {
         (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
         return
             LiquidityAmounts.getAmountsForLiquidity(
                 sqrtRatioX96,
-                TickMath.getSqrtRatioAtTick(range.lower),
-                TickMath.getSqrtRatioAtTick(range.upper),
+                TickMath.getSqrtRatioAtTick(tickLower),
+                TickMath.getSqrtRatioAtTick(tickUpper),
                 liquidity
             );
     }
 
     function _liquidityForAmounts(
-        Range memory range,
+        int24 tickLower,
+        int24 tickUpper,
         uint256 amount0,
         uint256 amount1
     ) internal view returns (uint128) {
@@ -430,20 +456,11 @@ contract PassiveRebalanceVault is
         return
             LiquidityAmounts.getLiquidityForAmounts(
                 sqrtRatioX96,
-                TickMath.getSqrtRatioAtTick(range.lower),
-                TickMath.getSqrtRatioAtTick(range.upper),
+                TickMath.getSqrtRatioAtTick(tickLower),
+                TickMath.getSqrtRatioAtTick(tickUpper),
                 amount0,
                 amount1
             );
-    }
-
-    function _twap() internal view returns (int24) {
-        uint32[] memory secondsAgo = new uint32[](2);
-        secondsAgo[0] = twapDuration;
-        secondsAgo[1] = 0;
-
-        (int56[] memory tickCumulatives, uint160[] memory _) = pool.observe(secondsAgo);
-        return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
     }
 
     /**

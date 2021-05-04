@@ -22,8 +22,10 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
     assert vault.governance() == gov
 
     tick = pool.slot0()[1] // 60 * 60
-    assert vault.baseRange() == (tick - 2400, tick + 2460)
-    assert vault.skewRange() == (tick + 60, tick + 60 + 1200)
+    assert vault.baseLower() == tick - 2400
+    assert vault.baseUpper() == tick + 2460
+    assert vault.skewLower() == tick + 60
+    assert vault.skewUpper() == tick + 60 + 1200
 
     assert vault.name() == "PassiveRebalanceVault"
     assert vault.symbol() == "PR"
@@ -384,11 +386,14 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     # Check ranges are set correctly
     tick = pool.slot0()[1]
     tickFloor = tick // 60 * 60
-    assert vault.baseRange() == (tickFloor - 2400, tickFloor + 60 + 2400)
+    assert vault.baseLower() == tickFloor - 2400
+    assert vault.baseUpper() == tickFloor + 60 + 2400
     if buy:
-        assert vault.skewRange() == (tickFloor + 60, tickFloor + 60 + 1200)
+        assert vault.skewLower() == tickFloor + 60
+        assert vault.skewUpper() == tickFloor + 60 + 1200
     else:
-        assert vault.skewRange() == (tickFloor - 1200, tickFloor)
+        assert vault.skewLower() == tickFloor - 1200
+        assert vault.skewUpper() == tickFloor
 
     base, rebalance = getPositions(vault)
 
@@ -411,6 +416,32 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     assert approx(ev["totalAmount0"]) == total0
     assert approx(ev["totalAmount1"]) == total1
     assert ev["totalSupply"] == vault.totalSupply()
+
+
+# TODO: FIX THIS TEST
+# @pytest.mark.parametrize("buy", [False, True])
+# def test_rebalance_when_price_limit(vault, pool, tokens, router, getPositions, gov, user, buy):
+#
+#     # Mint some liquidity
+#     vault.deposit(1e17, 1e19, gov, {"from": gov})
+#
+#     # Do a huge swap to move the price to min or max tick
+#     qty = 1 << 127
+#     tokens[0].mint(gov, qty)
+#     tokens[1].mint(gov, qty)
+#     router.swap(pool, buy, qty, {"from": gov})
+#
+#     # Rebalance
+#     tx = vault.rebalance({"from": gov})
+#
+#     # Check ranges are set correctly
+#     tick = pool.slot0()[1]
+#     tickFloor = tick // 60 * 60
+#     assert vault.baseRange() == (tickFloor - 2400, tickFloor + 60 + 2400)
+#     if buy:
+#         assert vault.skewRange() == (tickFloor + 60, tickFloor + 60 + 1200)
+#     else:
+#         assert vault.skewRange() == (tickFloor - 1200, tickFloor)
 
 
 @pytest.mark.parametrize("buy", [False, True])
