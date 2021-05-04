@@ -611,6 +611,32 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     vault.setMaxTotalSupply(0, {"from": gov})
     assert vault.maxTotalSupply() == 0
 
+    tokens[0].transfer(vault, 1e18, {"from": gov})
+    with reverts("governance"):
+        vault.emergencyWithdraw(tokens[0], 1e18, {"from": user})
+    balance = tokens[0].balanceOf(gov)
+    vault.emergencyWithdraw(tokens[0], 1e18, {"from": gov})
+    assert tokens[0].balanceOf(gov) == balance + 1e18
+
+    vault.deposit(1e8, 1e8, gov, {"from": gov})
+    with reverts("governance"):
+        vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e3, {"from": user})
+    balance0 = tokens[0].balanceOf(gov)
+    balance1 = tokens[1].balanceOf(gov)
+    vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e3, {"from": gov})
+    assert tokens[0].balanceOf(gov) > balance0
+    assert tokens[1].balanceOf(gov) > balance1
+
+    with reverts("governance"):
+        vault.finalize({"from": user})
+    assert not vault.finalized()
+    vault.finalize({"from": gov})
+    assert vault.finalized()
+    with reverts("finalized"):
+        vault.emergencyWithdraw(tokens[0], 1e18, {"from": gov})
+    with reverts("finalized"):
+        vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e8, {"from": gov})
+
     with reverts("governance"):
         vault.setGovernance(recipient, {"from": user})
     vault.setGovernance(recipient, {"from": gov})

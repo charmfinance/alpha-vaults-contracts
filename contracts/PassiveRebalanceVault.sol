@@ -56,6 +56,7 @@ contract PassiveRebalanceVault is
 
     address public governance;
     address public pendingGovernance;
+    bool public finalized;
     address public keeper;
     uint256 public lastUpdate;
 
@@ -538,5 +539,25 @@ contract PassiveRebalanceVault is
     modifier onlyGovernance {
         require(msg.sender == governance, "governance");
         _;
+    }
+
+    function finalize() external onlyGovernance {
+        finalized = true;
+    }
+
+    function emergencyWithdraw(IERC20 token, uint256 amount) external onlyGovernance {
+        require(!finalized, "finalized");
+        token.safeTransfer(msg.sender, amount);
+    }
+
+    function emergencyBurn(int24 tickLower, int24 tickUpper, uint128 liquidity) external onlyGovernance {
+        require(!finalized, "finalized");
+        _burnLiquidity(
+            tickLower,
+            tickUpper,
+            liquidity,
+            msg.sender,
+            true
+        );
     }
 }
