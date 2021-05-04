@@ -59,23 +59,6 @@ def test_constructor_checks(PassiveRebalanceVault, pool, gov):
         )
 
 
-def test_ranges_when_tick_is_multiple_of_spacing(
-    PassiveRebalanceVault, router, poolFromPrice, tokens, gov
-):
-
-    # Set initial price in ticks to zero
-    pool = poolFromPrice(1 << 96)
-    assert pool.slot0()[1] == 0
-
-    vault = gov.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 23 * 60 * 60, 100e18
-    )
-    assert vault.baseLower() == -2400
-    assert vault.baseUpper() == 2400
-    assert vault.skewLower() == 0
-    assert vault.skewUpper() == 1200
-
-
 def test_price_is_min_or_max_tick_checks(PassiveRebalanceVault, poolFromPrice, gov):
     # min sqrt ratio from TickMath.sol
     pool = poolFromPrice(4295128739)

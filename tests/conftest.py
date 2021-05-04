@@ -186,6 +186,10 @@ def poolFromPrice(pm, PassiveRebalanceVault, MockToken, tokens, gov):
         tx = factory.createPool(tokens[0], tokens[1], fee, {"from": gov})
         pool = UniswapV3Core.interface.IUniswapV3Pool(tx.return_value)
         pool.initialize(price, {"from": gov})
+
+        # Increase cardinality and fast forward so TWAP works
+        pool.increaseObservationCardinalityNext(100, {"from": gov})
+        chain.sleep(3600)
         return pool
 
     yield f
