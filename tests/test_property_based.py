@@ -8,7 +8,7 @@ MAX_EXAMPLES = 5
 @given(shares1=strategy("uint256", min_value=1e8, max_value=1e20))
 @given(shares2=strategy("uint256", min_value=1e8, max_value=1e20))
 @given(buy=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e24))
+@given(qty=strategy("uint256", min_value=1e3, max_value=1e20))
 @settings(max_examples=MAX_EXAMPLES)
 def test_deposit(vault, pool, router, gov, user, shares1, shares2, buy, qty):
 
@@ -38,7 +38,7 @@ def test_deposit(vault, pool, router, gov, user, shares1, shares2, buy, qty):
 
 @given(shares=strategy("uint256", min_value=1e8, max_value=1e20))
 @given(buy=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e24))
+@given(qty=strategy("uint256", min_value=1e3, max_value=1e20))
 @settings(max_examples=MAX_EXAMPLES)
 def test_rebalance(vault, pool, router, gov, user, shares, tokens, buy, qty):
 
@@ -64,7 +64,13 @@ def test_rebalance(vault, pool, router, gov, user, shares, tokens, buy, qty):
 
 
 def get_stats(vault):
-    total0, total1 = vault.getTotalAmounts()
+    # total0, total1 = vault.getTotalAmounts()
+
+    # use only amounts in positions, not free balance as deposits don't take
+    # those into account
+    _, base0, base1 = vault.getBasePosition()
+    _, skew0, skew1 = vault.getSkewPosition()
+    total0, total1 = base0 + skew0, base1 + skew1
     totalSupply = vault.totalSupply()
     return {
         "total0": total0,

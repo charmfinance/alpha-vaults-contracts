@@ -110,6 +110,17 @@ contract PassiveRebalanceVault is
         (skewLower, skewUpper) = _skewOrder();
     }
 
+    /**
+     * @notice Deposit tokens in proportion to the vault's holdings.
+     * @dev Ignore spare balances held by vault to save gas. Spare balances
+     * should be tiny anyway after rebalance.
+     * @params shares Number of vault shares to receive
+     * @params maxAmount0 Revert if amount0 is larger than this
+     * @params maxAmount1 Revert if amount1 is larger than this
+     * @params to Recipient of vault shares
+     * @returns amount0 Amount of token0 paid by sender
+     * @returns amount1 Amount of token1 paid by sender
+     */
     function deposit(
         uint256 shares,
         uint256 maxAmount0,
@@ -133,9 +144,9 @@ contract PassiveRebalanceVault is
             baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
             skewLiquidity = _liquidityForShares(skewLower, skewUpper, shares);
 
-            // Round up
-            baseLiquidity += baseLiquidity > 0 ? 1 : 0;
-            skewLiquidity += skewLiquidity > 0 ? 1 : 0;
+            // Round up to ensure sender is not underpaying
+            baseLiquidity += baseLiquidity > 0 ? 2 : 0;
+            skewLiquidity += skewLiquidity > 0 ? 2 : 0;
         }
 
         // Deposit liquidity into Uniswap
@@ -155,6 +166,15 @@ contract PassiveRebalanceVault is
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
+    /**
+     * @notice Withdraw tokens in proportion to the vault's holdings.
+     * @dev Ignore spare balances held by vault to save gas. Spare balances
+     * should be tiny anyway after rebalance.
+     * @params shares Number of vault shares redeemed by sender
+     * @params to Recipient of tokens
+     * @returns amount0 Amount of token0 returned to recipient
+     * @returns amount1 Amount of token1 returned to recipient
+     */
     function withdraw(uint256 shares, address to)
         external
         override
@@ -279,13 +299,13 @@ contract PassiveRebalanceVault is
      * much this vault would hold if it withdrew all its liquidity.
      */
     function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
-        (, uint256 baseAmount0, uint256 baseAmount1) = getBaseLiquidityAndAmounts();
-        (, uint256 skewAmount0, uint256 skewAmount1) = getSkewLiquidityAndAmounts();
+        (, uint256 baseAmount0, uint256 baseAmount1) = getBasePosition();
+        (, uint256 skewAmount0, uint256 skewAmount1) = getSkewPosition();
         total0 = token0.balanceOf(address(this)).add(baseAmount0).add(skewAmount0);
         total1 = token1.balanceOf(address(this)).add(baseAmount1).add(skewAmount1);
     }
 
-    function getBaseLiquidityAndAmounts()
+    function getBasePosition()
         public
         view
         returns (
@@ -298,7 +318,7 @@ contract PassiveRebalanceVault is
         (amount0, amount1) = _amountsForLiquidity(baseLower, baseUpper, liquidity);
     }
 
-    function getSkewLiquidityAndAmounts()
+    function getSkewPosition()
         public
         view
         returns (
