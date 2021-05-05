@@ -5,7 +5,7 @@ from brownie import (
     Contract,
     MockToken,
     Router,
-    Vault,
+    PassiveRebalanceVault,
 )
 import json
 from math import floor, log, sqrt
@@ -15,10 +15,10 @@ UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0-rc.2")
 
 
 # rinkeby
-ETH = "0xfacD050B9B8589037571B00e93Be8215b72dA567"
-USDC = "0x3c427BEcd65097086df39A93563E478D4387290d"
+ETH = "0x0d5da5fb1e278089fc1370e49ff2b57cabc436c1"
+USDC = "0x708273d941f2cfb87607f0f6f64ffdf516d742f8"
 ROUTER = "0xc423F5B1e233B31997De5001C03C35F3A9220E6C"
-VAULT = "0xb8e56500bBf4451e3B66B6C9698f1CD35AA5b009"
+VAULT = "0x8e92BF93EF7c1d6cAC19EBc34BF22037FccA99a6"
 
 FEE = 3000
 TICK_SPACING = 60
@@ -98,7 +98,7 @@ def create_pool():
 
 def deploy_vault():
     deployer = accounts.load("deployer")
-    vault = deployer.deploy(Vault, _pool(), 2400, 1200, 100)
+    vault = deployer.deploy(PassiveRebalanceVault, _pool(), 2400, 1200, 100)
     MockToken.at(ETH).approve(vault, 1 << 255, {"from": deployer})
     MockToken.at(USDC).approve(vault, 1 << 255, {"from": deployer})
 
@@ -118,20 +118,20 @@ def deploy_vault():
 
 def deploy_router():
     deployer = accounts.load("deployer")
-    router = deployer.deploy(Router, _pool())
+    router = deployer.deploy(Router)
     MockToken.at(ETH).approve(router, 1 << 255, {"from": deployer})
     MockToken.at(USDC).approve(router, 1 << 255, {"from": deployer})
 
     # lp over whole range
     _print_balances(deployer)
-    router.mint(-887272, 887272, 1e16, {"from": deployer})
+    router.mint(_pool(), -887220, 887220, 1e14, {"from": deployer})
     _print_balances(deployer)
     print(f"Router address: {router.address}")
 
 
 def rebalance():
     deployer = accounts.load("deployer")
-    vault = Vault.at(VAULT)
+    vault = PassiveRebalanceVault.at(VAULT)
     print(f"Passive position:    {vault.passivePosition()}")
     print(f"Rebalance position:  {vault.rebalancePosition()}")
 
@@ -155,7 +155,7 @@ def price():
 
 def vaultMint():
     deployer = accounts.load("deployer")
-    vault = Vault.at(VAULT)
+    vault = PassiveRebalanceVault.at(VAULT)
 
     _print_balances(deployer)
     vault.mint(1e20, deployer, {"from": deployer})
@@ -165,7 +165,7 @@ def vaultMint():
 
 def vaultBurn():
     deployer = accounts.load("deployer")
-    vault = Vault.at(VAULT)
+    vault = PassiveRebalanceVault.at(VAULT)
 
     _print_balances(deployer)
     vault.burn(1e20, deployer, {"from": deployer})
@@ -179,6 +179,7 @@ def poolMint():
 
     _print_balances(deployer)
     router.mint(
+        _pool(),
         price_to_tick(1800e8 / 1e18),
         price_to_tick(2200e8 / 1e18),
         1e20,
@@ -192,7 +193,7 @@ def poolBuy():
     router = Router.at(ROUTER)
 
     _print_balances(deployer)
-    router.swap(True, 1e20, {"from": deployer})
+    router.swap(_pool(), True, 1e20, {"from": deployer})
     _print_balances(deployer)
     price()
 
@@ -202,7 +203,7 @@ def poolSell():
     router = Router.at(ROUTER)
 
     _print_balances(deployer)
-    router.swap(False, 2000e22, {"from": deployer})
+    router.swap(_pool(), False, 2000e22, {"from": deployer})
     _print_balances(deployer)
     price()
 

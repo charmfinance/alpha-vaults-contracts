@@ -1,5 +1,6 @@
 from brownie import accounts, project, MockToken, PassiveRebalanceVault, Router
 from math import floor, sqrt
+import time
 
 
 UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0-rc.2")
@@ -30,16 +31,17 @@ def main():
     # Increase cardinality so TWAP works
     pool.increaseObservationCardinalityNext(100, {"from": deployer})
 
-    vault = deployer.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 500, 600, 600, 100e18
-    )
-
     router = deployer.deploy(Router)
     MockToken.at(eth).approve(router, 1 << 255, {"from": deployer})
     MockToken.at(usdc).approve(router, 1 << 255, {"from": deployer})
 
     max_tick = 887272 // 60 * 60
     router.mint(pool, -max_tick, max_tick, 1e15, {"from": deployer})
+
+    # Set short TWAP duration so that check in constructor passes
+    vault = deployer.deploy(
+        PassiveRebalanceVault, pool, 2400, 1200, 500, 1, 600, 100e18
+    )
 
     print(f"Vault address: {vault.address}")
     print(f"Router address: {router.address}")
