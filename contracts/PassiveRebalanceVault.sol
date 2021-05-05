@@ -168,12 +168,12 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      * @return amount0 Amount of token0 returned to recipient
      * @return amount1 Amount of token1 returned to recipient
      */
-    function withdraw(uint256 shares, uint256 amount0Min, uint256 amount1Min, address to)
-        external
-        override
-        nonReentrant
-        returns (uint256 amount0, uint256 amount1)
-    {
+    function withdraw(
+        uint256 shares,
+        uint256 amount0Min,
+        uint256 amount1Min,
+        address to
+    ) external override nonReentrant returns (uint256 amount0, uint256 amount1) {
         require(shares > 0, "shares");
         require(to != address(0), "to");
 

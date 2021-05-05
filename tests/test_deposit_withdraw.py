@@ -249,17 +249,5 @@ def test_withdraw_checks(vault, user, recipient):
         vault.withdraw(1e8, 1e18, 0, recipient, {"from": user})
     with reverts("amount1Min"):
         vault.withdraw(1e8, 0, 1e18, recipient, {"from": user})
-
-
-def test_cannot_withdraw_all(vault, gov):
-
-    # Fast-forward 24 hours to avoid cooldown
-    chain.sleep(24 * 60 * 60)
-
-    # Mint
-    shares = 1e8
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, gov, {"from": gov})
-
-    # Burn all
     with reverts("MIN_TOTAL_SUPPLY"):
-        vault.withdraw(shares, gov, {"from": gov})
+        vault.withdraw(shares, 0, 0, recipient, {"from": user})
