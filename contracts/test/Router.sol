@@ -9,11 +9,10 @@ import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.so
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
-
 /**
  * @dev    DO NOT USE IN PRODUCTION! This is a simple router that's only
- *         intended for use in tests and lacks critical safety checks such as
- *         for slippage and callback sender.
+ *         intended for use in tests and lacks safety checks such as slippage
+ *         and callback caller checks.
  */
 contract Router is IUniswapV3MintCallback, IUniswapV3SwapCallback {
     function mint(
@@ -25,23 +24,19 @@ contract Router is IUniswapV3MintCallback, IUniswapV3SwapCallback {
         int24 tickSpacing = pool.tickSpacing();
         require(tickLower % tickSpacing == 0, "tickLower must be a multiple of tickSpacing");
         require(tickUpper % tickSpacing == 0, "tickUpper must be a multiple of tickSpacing");
-        pool.mint(
-            msg.sender,
-            tickLower,
-            tickUpper,
-            amount,
-            abi.encode(msg.sender)
-        );
+        pool.mint(msg.sender, tickLower, tickUpper, amount, abi.encode(msg.sender));
     }
 
-    function swap(IUniswapV3Pool pool, bool zeroForOne, int256 amountSpecified) external {
+    function swap(
+        IUniswapV3Pool pool,
+        bool zeroForOne,
+        int256 amountSpecified
+    ) external {
         pool.swap(
             msg.sender,
             zeroForOne,
             amountSpecified,
-            zeroForOne
-                ? TickMath.MIN_SQRT_RATIO + 1
-                : TickMath.MAX_SQRT_RATIO - 1,
+            zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1,
             abi.encode(msg.sender)
         );
     }
@@ -65,21 +60,14 @@ contract Router is IUniswapV3MintCallback, IUniswapV3SwapCallback {
     }
 
     function _callback(
-        uint256 amount0, uint256 amount1, bytes calldata data) internal {
+        uint256 amount0,
+        uint256 amount1,
+        bytes calldata data
+    ) internal {
         IUniswapV3Pool pool = IUniswapV3Pool(msg.sender);
         address sender = abi.decode(data, (address));
 
-        TransferHelper.safeTransferFrom(
-            pool.token0(),
-            sender,
-            msg.sender,
-            amount0
-        );
-        TransferHelper.safeTransferFrom(
-            pool.token1(),
-            sender,
-            msg.sender,
-            amount1
-        );
+        TransferHelper.safeTransferFrom(pool.token0(), sender, msg.sender, amount0);
+        TransferHelper.safeTransferFrom(pool.token1(), sender, msg.sender, amount1);
     }
 }
