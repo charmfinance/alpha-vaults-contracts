@@ -25,8 +25,8 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
     assert vault.limitLower() == tick + 60
     assert vault.limitUpper() == tick + 60 + 1200
 
-    assert vault.name() == "PassiveRebalanceVault"
-    assert vault.symbol() == "PR"
+    assert vault.name() == "Alpha Vault"
+    assert vault.symbol() == "AV"
     assert vault.decimals() == 18
 
 

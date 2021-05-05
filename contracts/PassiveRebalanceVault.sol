@@ -71,7 +71,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         uint32 _twapDuration,
         uint256 _rebalanceCooldown,
         uint256 _maxTotalSupply
-    ) ERC20("PassiveRebalanceVault", "PR") {
+    ) ERC20("Alpha Vault", "AV") {
         require(_pool != address(0));
         pool = IUniswapV3Pool(_pool);
         token0 = IERC20(pool.token0());
