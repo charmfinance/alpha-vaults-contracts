@@ -14,8 +14,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
-import "@uniswap/v3-periphery/contracts/base/Multicall.sol";
-import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
@@ -28,8 +26,6 @@ import "../interfaces/IVault.sol";
 contract PassiveRebalanceVault is
     IVault,
     IUniswapV3MintCallback,
-    Multicall,
-    SelfPermit,
     ERC20,
     ReentrancyGuard
 {
