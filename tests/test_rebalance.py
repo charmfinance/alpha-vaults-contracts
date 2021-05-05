@@ -2,6 +2,8 @@ from brownie import chain, reverts
 import pytest
 from pytest import approx
 
+from conftest import computePositionKey
+
 
 def test_rebalance_when_empty_then_mint(
     vault, pool, tokens, getPositions, gov, user, recipient
@@ -31,9 +33,21 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     # Do a swap to move the price
     qty = 1e16 * [100, 1][buy] * [1, 100][big]
     router.swap(pool, buy, qty, {"from": gov})
+    baseLower, baseUpper = vault.baseLower(), vault.baseUpper()
+    skewLower, skewUpper = vault.skewLower(), vault.skewUpper()
 
     # Rebalance
     tx = vault.rebalance({"from": gov})
+
+    # Check old positions are empty
+    liquidity, _, _, owed0, owed1 = pool.positions(
+        computePositionKey(vault, baseLower, baseUpper)
+    )
+    assert liquidity == owed0 == owed1 == 0
+    liquidity, _, _, owed0, owed1 = pool.positions(
+        computePositionKey(vault, skewLower, skewUpper)
+    )
+    assert liquidity == owed0 == owed1 == 0
 
     # Check ranges are set correctly
     tick = pool.slot0()[1]
