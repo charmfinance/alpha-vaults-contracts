@@ -96,8 +96,8 @@ def get_stats(vault):
     # use only amounts in positions, not free balance as deposits don't take
     # those into account
     _, base0, base1 = vault.getBasePosition()
-    _, skew0, skew1 = vault.getSkewPosition()
-    total0, total1 = base0 + skew0, base1 + skew1
+    _, limit0, limit1 = vault.getLimitPosition()
+    total0, total1 = base0 + limit0, base1 + limit1
     totalSupply = vault.totalSupply()
     return {
         "total0": total0,

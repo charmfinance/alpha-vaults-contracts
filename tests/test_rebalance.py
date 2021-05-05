@@ -34,7 +34,7 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     qty = 1e16 * [100, 1][buy] * [1, 100][big]
     router.swap(pool, buy, qty, {"from": gov})
     baseLower, baseUpper = vault.baseLower(), vault.baseUpper()
-    skewLower, skewUpper = vault.skewLower(), vault.skewUpper()
+    limitLower, limitUpper = vault.limitLower(), vault.limitUpper()
 
     # Rebalance
     tx = vault.rebalance({"from": gov})
@@ -45,7 +45,7 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     )
     assert liquidity == owed0 == owed1 == 0
     liquidity, _, _, owed0, owed1 = pool.positions(
-        computePositionKey(vault, skewLower, skewUpper)
+        computePositionKey(vault, limitLower, limitUpper)
     )
     assert liquidity == owed0 == owed1 == 0
 
@@ -55,11 +55,11 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     assert vault.baseLower() == tickFloor - 2400
     assert vault.baseUpper() == tickFloor + 60 + 2400
     if buy:
-        assert vault.skewLower() == tickFloor + 60
-        assert vault.skewUpper() == tickFloor + 60 + 1200
+        assert vault.limitLower() == tickFloor + 60
+        assert vault.limitUpper() == tickFloor + 60 + 1200
     else:
-        assert vault.skewLower() == tickFloor - 1200
-        assert vault.skewUpper() == tickFloor
+        assert vault.limitLower() == tickFloor - 1200
+        assert vault.limitUpper() == tickFloor
 
     base, rebalance = getPositions(vault)
 

@@ -12,7 +12,7 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
     assert vault.tickSpacing() == pool.tickSpacing()
 
     assert vault.baseThreshold() == 2400
-    assert vault.skewThreshold() == 1200
+    assert vault.limitThreshold() == 1200
     assert vault.maxTwapDeviation() == 500
     assert vault.twapDuration() == 600
     assert vault.rebalanceCooldown() == 12 * 60 * 60
@@ -22,8 +22,8 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
     tick = pool.slot0()[1] // 60 * 60
     assert vault.baseLower() == tick - 2400
     assert vault.baseUpper() == tick + 2460
-    assert vault.skewLower() == tick + 60
-    assert vault.skewUpper() == tick + 60 + 1200
+    assert vault.limitLower() == tick + 60
+    assert vault.limitUpper() == tick + 60 + 1200
 
     assert vault.name() == "PassiveRebalanceVault"
     assert vault.symbol() == "PR"
@@ -36,7 +36,7 @@ def test_constructor_checks(PassiveRebalanceVault, pool, gov):
             PassiveRebalanceVault, pool, 2401, 1200, 500, 600, 23 * 60 * 60, 100e18
         )
 
-    with reverts("skewThreshold"):
+    with reverts("limitThreshold"):
         gov.deploy(
             PassiveRebalanceVault, pool, 2400, 1201, 500, 600, 23 * 60 * 60, 100e18
         )
@@ -44,7 +44,7 @@ def test_constructor_checks(PassiveRebalanceVault, pool, gov):
     with reverts("baseThreshold"):
         gov.deploy(PassiveRebalanceVault, pool, 0, 1200, 500, 600, 23 * 60 * 60, 100e18)
 
-    with reverts("skewThreshold"):
+    with reverts("limitThreshold"):
         gov.deploy(PassiveRebalanceVault, pool, 2400, 0, 500, 600, 23 * 60 * 60, 100e18)
 
     # check works with small thresholds

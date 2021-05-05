@@ -35,7 +35,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     int24 public tickSpacing;
 
     int24 public baseThreshold;
-    int24 public skewThreshold;
+    int24 public limitThreshold;
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
     uint256 public rebalanceCooldown;
@@ -43,8 +43,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     int24 public baseLower;
     int24 public baseUpper;
-    int24 public skewLower;
-    int24 public skewUpper;
+    int24 public limitLower;
+    int24 public limitUpper;
 
     address public governance;
     address public pendingGovernance;
@@ -55,7 +55,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     /**
      * @param _pool Underlying Uniswap V3 pool
      * @param _baseThreshold Half the width of base range order in ticks
-     * @param _skewThreshold Width of skew range order in ticks
+     * @param _limitThreshold Width of limit range order in ticks
      * @param _maxTwapDeviation How much current price can deviate from TWAP
      * during rebalance
      * @param _twapDuration Duration of TWAP in seconds used for max TWAP
@@ -68,7 +68,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     constructor(
         address _pool,
         int24 _baseThreshold,
-        int24 _skewThreshold,
+        int24 _limitThreshold,
         int24 _maxTwapDeviation,
         uint32 _twapDuration,
         uint256 _rebalanceCooldown,
@@ -82,7 +82,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         tickSpacing = pool.tickSpacing();
 
         baseThreshold = _baseThreshold;
-        skewThreshold = _skewThreshold;
+        limitThreshold = _limitThreshold;
         maxTwapDeviation = _maxTwapDeviation;
         twapDuration = _twapDuration;
         rebalanceCooldown = _rebalanceCooldown;
@@ -90,14 +90,14 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         governance = msg.sender;
 
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
-        require(_skewThreshold % tickSpacing == 0, "skewThreshold");
+        require(_limitThreshold % tickSpacing == 0, "limitThreshold");
         require(_baseThreshold > 0, "baseThreshold");
-        require(_skewThreshold > 0, "skewThreshold");
+        require(_limitThreshold > 0, "limitThreshold");
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
         _checkMidAndTwap();
 
         (baseLower, baseUpper) = _baseRange();
-        (skewLower, skewUpper) = _skewOrder();
+        (limitLower, limitUpper) = _limitRange();
     }
 
     /**
@@ -121,36 +121,36 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(shares > 0, "shares");
 
         uint128 baseLiquidity;
-        uint128 skewLiquidity;
+        uint128 limitLiquidity;
 
         if (totalSupply() == 0) {
-            // For initial deposit, just place just base order and ignore skew order
+            // For initial deposit, just place just base order and ignore limit order
             require(shares < type(uint128).max, "shares overflow");
             require(shares >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
             baseLiquidity = uint128(shares);
-            skewLiquidity = 0;
+            limitLiquidity = 0;
         } else {
             // Calculate proportional liquidity
             baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
-            skewLiquidity = _liquidityForShares(skewLower, skewUpper, shares);
+            limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
 
             // Round up to ensure sender is not underpaying
             baseLiquidity += baseLiquidity > 0 ? 2 : 0;
-            skewLiquidity += skewLiquidity > 0 ? 2 : 0;
+            limitLiquidity += limitLiquidity > 0 ? 2 : 0;
         }
 
         // Deposit liquidity into Uniswap
         (uint256 baseAmount0, uint256 baseAmount1) =
             _mintLiquidity(baseLower, baseUpper, baseLiquidity, msg.sender);
-        (uint256 skewAmount0, uint256 skewAmount1) =
-            _mintLiquidity(skewLower, skewUpper, skewLiquidity, msg.sender);
+        (uint256 limitAmount0, uint256 limitAmount1) =
+            _mintLiquidity(limitLower, limitUpper, limitLiquidity, msg.sender);
 
         // Mint shares
         _mint(to, shares);
         require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
 
-        amount0 = baseAmount0.add(skewAmount0);
-        amount1 = baseAmount1.add(skewAmount1);
+        amount0 = baseAmount0.add(limitAmount0);
+        amount1 = baseAmount1.add(limitAmount1);
         require(amount0 <= amount0Max, "amount0Max");
         require(amount1 <= amount1Max, "amount1Max");
 
@@ -179,17 +179,17 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
         // Withdraw liquidity from Uniswap
         uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
-        uint128 skewLiquidity = _liquidityForShares(skewLower, skewUpper, shares);
+        uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
         (uint256 baseAmount0, uint256 baseAmount1) =
             _burnLiquidity(baseLower, baseUpper, baseLiquidity, to, false);
-        (uint256 skewAmount0, uint256 skewAmount1) =
-            _burnLiquidity(skewLower, skewUpper, skewLiquidity, to, false);
+        (uint256 limitAmount0, uint256 limitAmount1) =
+            _burnLiquidity(limitLower, limitUpper, limitLiquidity, to, false);
 
         // Burn shares
         _burn(msg.sender, shares);
 
-        amount0 = baseAmount0.add(skewAmount0);
-        amount1 = baseAmount1.add(skewAmount1);
+        amount0 = baseAmount0.add(limitAmount0);
+        amount1 = baseAmount1.add(limitAmount1);
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
 
@@ -208,9 +208,9 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
         // Withdraw all liquidity from Uniswap
         uint128 basePosition = _position(baseLower, baseUpper);
-        uint128 skewPosition = _position(skewLower, skewUpper);
+        uint128 limitPosition = _position(limitLower, limitUpper);
         _burnLiquidity(baseLower, baseUpper, basePosition, address(this), true);
-        _burnLiquidity(skewLower, skewUpper, skewPosition, address(this), true);
+        _burnLiquidity(limitLower, limitUpper, limitPosition, address(this), true);
 
         // Emit event with useful info
         (, int24 mid, , , , , ) = pool.slot0();
@@ -223,14 +223,14 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         uint128 baseLiquidity = _maxDepositable(baseLower, baseUpper);
         _mintLiquidity(baseLower, baseUpper, baseLiquidity, address(this));
 
-        // Update skew range and place order
-        (skewLower, skewUpper) = _skewOrder();
-        uint128 skewLiquidity = _maxDepositable(skewLower, skewUpper);
-        _mintLiquidity(skewLower, skewUpper, skewLiquidity, address(this));
+        // Update limit range and place order
+        (limitLower, limitUpper) = _limitRange();
+        uint128 limitLiquidity = _maxDepositable(limitLower, limitUpper);
+        _mintLiquidity(limitLower, limitUpper, limitLiquidity, address(this));
 
-        // Check base and skew ranges aren't the same, otherwise calculations
+        // Check base and limit ranges aren't the same, otherwise calculations
         // would fail elsewhere
-        assert(baseLower != skewLower || baseUpper != skewUpper);
+        assert(baseLower != limitLower || baseUpper != limitUpper);
     }
 
     function _mintLiquidity(
@@ -296,9 +296,9 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      */
     function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
         (, uint256 baseAmount0, uint256 baseAmount1) = getBasePosition();
-        (, uint256 skewAmount0, uint256 skewAmount1) = getSkewPosition();
-        total0 = token0.balanceOf(address(this)).add(baseAmount0).add(skewAmount0);
-        total1 = token1.balanceOf(address(this)).add(baseAmount1).add(skewAmount1);
+        (, uint256 limitAmount0, uint256 limitAmount1) = getLimitPosition();
+        total0 = token0.balanceOf(address(this)).add(baseAmount0).add(limitAmount0);
+        total1 = token1.balanceOf(address(this)).add(baseAmount1).add(limitAmount1);
     }
 
     function getBasePosition()
@@ -314,7 +314,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         (amount0, amount1) = _amountsForLiquidity(baseLower, baseUpper, liquidity);
     }
 
-    function getSkewPosition()
+    function getLimitPosition()
         public
         view
         returns (
@@ -323,16 +323,16 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             uint256 amount1
         )
     {
-        liquidity = _position(skewLower, skewUpper);
-        (amount0, amount1) = _amountsForLiquidity(skewLower, skewUpper, liquidity);
+        liquidity = _position(limitLower, limitUpper);
+        (amount0, amount1) = _amountsForLiquidity(limitLower, limitUpper, liquidity);
     }
 
     /// @dev Revert if current price is too close to min or max ticks allowed
     /// by Uniswap, or if it deviates too much from the TWAP. Should be called
-    /// whenever base and skew ranges are updated.
+    /// whenever base and limit ranges are updated.
     function _checkMidAndTwap() internal {
         (, int24 mid, , , , , ) = pool.slot0();
-        int24 maxThreshold = baseThreshold > skewThreshold ? baseThreshold : skewThreshold;
+        int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
         require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
         require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
 
@@ -352,15 +352,15 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         return (floorMid - baseThreshold, floorMid + tickSpacing + baseThreshold);
     }
 
-    /// @dev Return lower and upper ticks for the skew order. This order helps
+    /// @dev Return lower and upper ticks for the limit order. This order helps
     /// the vault rebalance closer to 50/50 and is either just above or just
-    /// below the current mid. Its width in ticks is equal to `skewThreshold`.
-    function _skewOrder() internal view returns (int24, int24) {
+    /// below the current mid. Its width in ticks is equal to `limitThreshold`.
+    function _limitRange() internal view returns (int24, int24) {
         (, int24 mid, , , , , ) = pool.slot0();
         int24 floorMid = _floor(mid);
-        (int24 bidLower, int24 bidUpper) = (floorMid - skewThreshold, floorMid);
+        (int24 bidLower, int24 bidUpper) = (floorMid - limitThreshold, floorMid);
         (int24 askLower, int24 askUpper) =
-            (floorMid + tickSpacing, floorMid + tickSpacing + skewThreshold);
+            (floorMid + tickSpacing, floorMid + tickSpacing + limitThreshold);
         return
             (_maxDepositable(bidLower, bidUpper) > _maxDepositable(askLower, askUpper))
                 ? (bidLower, bidUpper)
@@ -461,14 +461,14 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     }
 
     /**
-     * @notice Set skew threshold S. From the next rebalance, the strategy
-     * will move the skew order to the range [floor(mid) - S, floor(mid)] or
+     * @notice Set limit threshold S. From the next rebalance, the strategy
+     * will move the limit order to the range [floor(mid) - S, floor(mid)] or
      * [ceil(mid), ceil(mid) + S] depending on which token it holds more of.
      */
-    function setSkewThreshold(int24 _skewThreshold) external onlyGovernance {
-        require(_skewThreshold % tickSpacing == 0, "skewThreshold");
-        require(_skewThreshold > 0, "skewThreshold");
-        skewThreshold = _skewThreshold;
+    function setLimitThreshold(int24 _limitThreshold) external onlyGovernance {
+        require(_limitThreshold % tickSpacing == 0, "limitThreshold");
+        require(_limitThreshold > 0, "limitThreshold");
+        limitThreshold = _limitThreshold;
     }
 
     /**

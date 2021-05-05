@@ -12,13 +12,13 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.baseThreshold() == 4800
 
     with reverts("governance"):
-        vault.setSkewThreshold(0, {"from": user})
-    with reverts("skewThreshold"):
-        vault.setSkewThreshold(1201, {"from": gov})
-    with reverts("skewThreshold"):
-        vault.setSkewThreshold(0, {"from": gov})
-    vault.setSkewThreshold(600, {"from": gov})
-    assert vault.skewThreshold() == 600
+        vault.setLimitThreshold(0, {"from": user})
+    with reverts("limitThreshold"):
+        vault.setLimitThreshold(1201, {"from": gov})
+    with reverts("limitThreshold"):
+        vault.setLimitThreshold(0, {"from": gov})
+    vault.setLimitThreshold(600, {"from": gov})
+    assert vault.limitThreshold() == 600
 
     with reverts("governance"):
         vault.setMaxTwapDeviation(1000, {"from": user})

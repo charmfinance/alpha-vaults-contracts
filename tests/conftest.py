@@ -172,8 +172,8 @@ def poolFromPrice(pm, PassiveRebalanceVault, MockToken, tokens, gov):
 def getPositions(pool):
     def f(vault):
         baseKey = computePositionKey(vault, vault.baseLower(), vault.baseUpper())
-        skewKey = computePositionKey(vault, vault.skewLower(), vault.skewUpper())
-        return pool.positions(baseKey), pool.positions(skewKey)
+        limitKey = computePositionKey(vault, vault.limitLower(), vault.limitUpper())
+        return pool.positions(baseKey), pool.positions(limitKey)
 
     yield f
 
@@ -182,9 +182,9 @@ def getPositions(pool):
 def debug(pool, tokens):
     def f(vault):
         baseKey = computePositionKey(vault, vault.baseLower(), vault.baseUpper())
-        skewKey = computePositionKey(vault, vault.skewLower(), vault.skewUpper())
+        limitKey = computePositionKey(vault, vault.limitLower(), vault.limitUpper())
         print(f"Passive position:    {pool.positions(baseKey)}")
-        print(f"Rebalance position:  {pool.positions(skewKey)}")
+        print(f"Rebalance position:  {pool.positions(limitKey)}")
         print(f"Spare balance 0:  {tokens[0].balanceOf(vault)}")
         print(f"Spare balance 1:  {tokens[1].balanceOf(vault)}")
 

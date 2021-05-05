@@ -74,7 +74,7 @@ def test_deposit_existing(
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
     totalSupply = vault.totalSupply()
-    base0, skew0 = getPositions(vault)
+    base0, limit0 = getPositions(vault)
 
     # Mint
     tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
@@ -86,10 +86,10 @@ def test_deposit_existing(
     assert amount1 == balance1 - tokens[1].balanceOf(user)
 
     # Check liquidity and balances are in proportion
-    base1, skew1 = getPositions(vault)
+    base1, limit1 = getPositions(vault)
     ratio = (totalSupply + shares) / totalSupply
     assert approx(base1[0] / base0[0]) == ratio
-    assert approx(skew1[0] / skew0[0]) == ratio
+    assert approx(limit1[0] / limit0[0]) == ratio
 
     # Check event
     assert tx.events["Deposit"] == {
@@ -122,7 +122,7 @@ def test_deposit_existing_when_price_up(
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
     totalSupply = vault.totalSupply()
-    base0, skew0 = getPositions(vault)
+    base0, limit0 = getPositions(vault)
 
     # Mint
     tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
@@ -134,10 +134,10 @@ def test_deposit_existing_when_price_up(
     assert amount1 == balance1 - tokens[1].balanceOf(user) > 0
 
     # Check liquidity and balances are in proportion
-    base1, skew1 = getPositions(vault)
+    base1, limit1 = getPositions(vault)
     ratio = (totalSupply + shares) / totalSupply
     assert base0[0] == base1[0] == 0
-    assert approx(skew1[0] / skew0[0], rel=1e-5) == ratio
+    assert approx(limit1[0] / limit0[0], rel=1e-5) == ratio
 
 
 @pytest.mark.parametrize(
@@ -161,7 +161,7 @@ def test_deposit_existing_when_price_down(
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
     totalSupply = vault.totalSupply()
-    base0, skew0 = getPositions(vault)
+    base0, limit0 = getPositions(vault)
 
     # Mint
     tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
@@ -173,10 +173,10 @@ def test_deposit_existing_when_price_down(
     assert amount1 == balance1 - tokens[1].balanceOf(user) == 0
 
     # Check liquidity and balances are in proportion
-    base1, skew1 = getPositions(vault)
+    base1, limit1 = getPositions(vault)
     ratio = (totalSupply + shares) / totalSupply
     assert base0[0] == base1[0] == 0
-    assert approx(skew1[0] / skew0[0], rel=1e-5) == ratio
+    assert approx(limit1[0] / limit0[0], rel=1e-5) == ratio
 
 
 def test_deposit_existing_checks(vaultAfterPriceMove, user, recipient):
@@ -209,7 +209,7 @@ def test_withdraw(
     balance0 = tokens[0].balanceOf(recipient)
     balance1 = tokens[1].balanceOf(recipient)
     totalSupply = vault.totalSupply()
-    base0, skew0 = getPositions(vault)
+    base0, limit0 = getPositions(vault)
 
     # Burn
     tx = vault.withdraw(shares, 0, 0, recipient, {"from": user})
@@ -217,9 +217,9 @@ def test_withdraw(
     assert vault.balanceOf(user) == 0
 
     # Check liquidity in pool
-    base1, skew1 = getPositions(vault)
+    base1, limit1 = getPositions(vault)
     assert approx((totalSupply - shares) / totalSupply) == base1[0] / base0[0]
-    assert approx((totalSupply - shares) / totalSupply) == skew1[0] / skew0[0]
+    assert approx((totalSupply - shares) / totalSupply) == limit1[0] / limit0[0]
 
     # Check recipient has received tokens
     assert tokens[0].balanceOf(recipient) - balance0 == amount0 > 0
