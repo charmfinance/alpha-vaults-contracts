@@ -24,12 +24,39 @@ def test_deposit(vault, pool, router, gov, user, shares1, shares2, buy, qty):
     after = get_stats(vault)
 
     # Check amount per share is roughly the same
-    assert approx(after["perShare0"], rel=1e-3) == before["perShare0"]
-    assert approx(after["perShare1"], rel=1e-3) == before["perShare1"]
+    assert approx(after["perShare0"], rel=1e-4) == before["perShare0"]
+    assert approx(after["perShare1"], rel=1e-4) == before["perShare1"]
 
     # Check amount per share doesn't decrease
     assert after["perShare0"] >= before["perShare0"]
     assert after["perShare1"] >= before["perShare1"]
+
+    # Check ratios
+    assert approx(after["total0"] * amount1, rel=1e-5) == after["total1"] * amount0
+    assert approx(before["total0"] * amount1, rel=1e-5) == before["total1"] * amount0
+
+
+@given(diff=strategy("uint256", min_value=1e8, max_value=1e18))
+@given(shares=strategy("uint256", min_value=1e8, max_value=1e18))
+@given(buy=strategy("bool"))
+@given(qty=strategy("uint256", min_value=1e3, max_value=1e20))
+@settings(max_examples=MAX_EXAMPLES)
+def test_withdraw(vault, pool, router, gov, user, diff, shares, buy, qty):
+
+    # Deposit, move price and rebalance to simulate existing activity
+    vault.deposit(shares + diff, 1 << 255, 1 << 255, gov, {"from": gov})
+    router.swap(pool, buy, qty, {"from": gov})
+    vault.setMaxTwapDeviation(1 << 22, {"from": gov})  # ignore twap deviation
+    vault.rebalance({"from": gov})
+
+    before = get_stats(vault)
+    tx = vault.withdraw(shares, 0, 0, gov, {"from": gov})
+    amount0, amount1 = tx.return_value
+    after = get_stats(vault)
+
+    # Check amount per share is roughly the same
+    assert approx(after["perShare0"], rel=1e-4) == before["perShare0"]
+    assert approx(after["perShare1"], rel=1e-4) == before["perShare1"]
 
     # Check ratios
     assert approx(after["total0"] * amount1, rel=1e-5) == after["total1"] * amount0
@@ -53,8 +80,8 @@ def test_rebalance(vault, pool, router, gov, user, shares, tokens, buy, qty):
 
     # Check total amounts is roughly the same. They should only increase a bit
     # due to fees earned
-    assert approx(after["total0"], rel=1e-3) == before["total0"]
-    assert approx(after["total1"], rel=1e-3) == before["total1"]
+    assert approx(after["total0"], rel=1e-2) == before["total0"]
+    assert approx(after["total1"], rel=1e-2) == before["total1"]
     assert after["total0"] >= before["total0"] - 2
     assert after["total1"] >= before["total1"] - 2
 
