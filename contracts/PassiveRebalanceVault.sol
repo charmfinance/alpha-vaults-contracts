@@ -153,6 +153,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         amount1 = baseAmount1.add(skewAmount1);
         require(amount0 <= amount0Max, "amount0Max");
         require(amount1 <= amount1Max, "amount1Max");
+
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
@@ -161,11 +162,13 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      * @dev Ignore spare balances held by vault to save gas. Spare balances
      * should be tiny anyway after rebalance.
      * @param shares Number of vault shares redeemed by sender
+     * @param amount0Min Revert if amount0 is smaller than this
+     * @param amount1Min Revert if amount1 is smaller than this
      * @param to Recipient of tokens
      * @return amount0 Amount of token0 returned to recipient
      * @return amount1 Amount of token1 returned to recipient
      */
-    function withdraw(uint256 shares, address to)
+    function withdraw(uint256 shares, uint256 amount0Min, uint256 amount1Min, address to)
         external
         override
         nonReentrant
@@ -187,6 +190,9 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
         amount0 = baseAmount0.add(skewAmount0);
         amount1 = baseAmount1.add(skewAmount1);
+        require(amount0 >= amount0Min, "amount0Min");
+        require(amount1 >= amount1Min, "amount1Min");
+
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
 
         // The first MIN_TOTAL_SUPPLY shares are locked

@@ -47,9 +47,9 @@ def test_deposit_initial_checks(vault, user, recipient):
         vault.deposit(1, 1e8, 1e8, recipient, {"from": user})
     with reverts("to"):
         vault.deposit(1e8, 1 << 255, 1 << 255, ZERO_ADDRESS, {"from": user})
-    with reverts("maxAmount0"):
+    with reverts("amount0Max"):
         vault.deposit(1e8, 0, 1 << 255, recipient, {"from": user})
-    with reverts("maxAmount1"):
+    with reverts("amount1Max"):
         vault.deposit(1e8, 1 << 255, 0, recipient, {"from": user})
 
 
@@ -182,9 +182,9 @@ def test_deposit_existing_when_price_down(
 def test_deposit_existing_checks(vaultAfterPriceMove, user, recipient):
     with reverts("shares"):
         vaultAfterPriceMove.deposit(0, 1 << 255, 1 << 255, recipient, {"from": user})
-    with reverts("maxAmount0"):
+    with reverts("amount0Max"):
         vaultAfterPriceMove.deposit(1e8, 0, 1 << 255, recipient, {"from": user})
-    with reverts("maxAmount1"):
+    with reverts("amount1Max"):
         vaultAfterPriceMove.deposit(1e8, 1 << 255, 0, recipient, {"from": user})
     with reverts("to"):
         vaultAfterPriceMove.deposit(
@@ -212,7 +212,7 @@ def test_withdraw(
     base0, skew0 = getPositions(vault)
 
     # Burn
-    tx = vault.withdraw(shares, recipient, {"from": user})
+    tx = vault.withdraw(shares, 0, 0, recipient, {"from": user})
     amount0, amount1 = tx.return_value
     assert vault.balanceOf(user) == 0
 
@@ -233,6 +233,22 @@ def test_withdraw(
         "amount0": amount0,
         "amount1": amount1,
     }
+
+
+def test_withdraw_checks(vault, user, recipient):
+    shares = 1e8
+    vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
+
+    with reverts("shares"):
+        vault.withdraw(0, 0, 0, recipient, {"from": user})
+    with reverts("MIN_TOTAL_SUPPLY"):
+        vault.withdraw(shares - 1, 0, 0, recipient, {"from": user})
+    with reverts("to"):
+        vault.withdraw(1e8, 0, 0, ZERO_ADDRESS, {"from": user})
+    with reverts("amount0Min"):
+        vault.withdraw(1e8, 1e18, 0, recipient, {"from": user})
+    with reverts("amount1Min"):
+        vault.withdraw(1e8, 0, 1e18, recipient, {"from": user})
 
 
 def test_cannot_withdraw_all(vault, gov):
