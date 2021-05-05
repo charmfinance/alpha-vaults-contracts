@@ -21,7 +21,7 @@ def test_deposit_initial(
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
 
-    # Mint
+    # Deposit
     tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
     amount0, amount1 = tx.return_value
 
@@ -76,7 +76,7 @@ def test_deposit_existing(
     totalSupply = vault.totalSupply()
     base0, limit0 = getPositions(vault)
 
-    # Mint
+    # Deposit
     tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
     amount0, amount1 = tx.return_value
 
@@ -124,7 +124,7 @@ def test_deposit_existing_when_price_up(
     totalSupply = vault.totalSupply()
     base0, limit0 = getPositions(vault)
 
-    # Mint
+    # Deposit
     tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
     amount0, amount1 = tx.return_value
 
@@ -163,7 +163,7 @@ def test_deposit_existing_when_price_down(
     totalSupply = vault.totalSupply()
     base0, limit0 = getPositions(vault)
 
-    # Mint
+    # Deposit
     tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
     amount0, amount1 = tx.return_value
 
@@ -177,6 +177,41 @@ def test_deposit_existing_when_price_down(
     ratio = (totalSupply + shares) / totalSupply
     assert base0[0] == base1[0] == 0
     assert approx(limit1[0] / limit0[0], rel=1e-5) == ratio
+
+
+@pytest.mark.parametrize(
+    "shares",
+    [1e12, 1e18, 1e19],
+)
+def test_unused_deposit(vault, gov, user, recipient, tokens, shares):
+
+    # Initial deposit
+    vault.deposit(1e18, 1 << 255, 1 << 255, recipient, {"from": user})
+
+    # Deposit and withdraw and record expected amounts
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
+    vault.withdraw(shares, 0, 0, user, {"from": user})
+    exp0, exp1 = tx.return_value
+
+    # Store balances
+    balance0 = tokens[0].balanceOf(user)
+    balance1 = tokens[1].balanceOf(user)
+
+    # Give vault excess tokens
+    tokens[0].transfer(vault, 1e8, {"from": gov})
+    tokens[1].transfer(vault, 1e10, {"from": gov})
+
+    # Deposit
+    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
+    amount0, amount1 = tx.return_value
+
+    # Check unused amounts were also deposited
+    assert approx(amount0) == exp0 + 1e8 * shares / 1e18
+    assert approx(amount1) == exp1 + 1e10 * shares / 1e18
+
+    # Check balances match amounts
+    assert amount0 == balance0 - tokens[0].balanceOf(user) > 0
+    assert amount1 == balance1 - tokens[1].balanceOf(user) > 0
 
 
 def test_deposit_existing_checks(vaultAfterPriceMove, user, recipient):
@@ -200,7 +235,7 @@ def test_withdraw(
     # Fast-forward 24 hours to avoid cooldown
     chain.sleep(24 * 60 * 60)
 
-    # Mint and rebalance
+    # Deposit and rebalance
     shares = 1e8
     tx = vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
     vault.rebalance({"from": gov})
@@ -211,7 +246,7 @@ def test_withdraw(
     totalSupply = vault.totalSupply()
     base0, limit0 = getPositions(vault)
 
-    # Burn
+    # Withdraw
     tx = vault.withdraw(shares, 0, 0, recipient, {"from": user})
     amount0, amount1 = tx.return_value
     assert vault.balanceOf(user) == 0
@@ -233,6 +268,41 @@ def test_withdraw(
         "amount0": amount0,
         "amount1": amount1,
     }
+
+
+@pytest.mark.parametrize(
+    "shares",
+    [1e6, 1e12, 1e17],
+)
+def test_unused_withdraw(vault, gov, user, recipient, tokens, shares):
+
+    # Initial deposit
+    vault.deposit(1e18, 1 << 255, 1 << 255, user, {"from": user})
+
+    # Deposit and withdraw and record expected amounts
+    vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
+    tx = vault.withdraw(shares, 0, 0, user, {"from": user})
+    exp0, exp1 = tx.return_value
+
+    # Store balances, supply and positions
+    balance0 = tokens[0].balanceOf(recipient)
+    balance1 = tokens[1].balanceOf(recipient)
+
+    # Vault somehow has excess unused tokens
+    tokens[0].transfer(vault, 1e8, {"from": gov})
+    tokens[1].transfer(vault, 1e10, {"from": gov})
+
+    # Withdraw
+    tx = vault.withdraw(shares, 0, 0, recipient, {"from": user})
+    amount0, amount1 = tx.return_value
+
+    # Check half of unused tokens were also withdrawn
+    assert approx(amount0) == exp0 + 1e8 * shares / 1e18
+    assert approx(amount1) == exp1 + 1e10 * shares / 1e18
+
+    # Check balances match amounts
+    assert amount0 == tokens[0].balanceOf(recipient) - balance0 > 0
+    assert amount1 == tokens[1].balanceOf(recipient) - balance1 > 0
 
 
 def test_withdraw_checks(vault, user, recipient):

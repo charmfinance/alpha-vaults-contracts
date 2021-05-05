@@ -25,6 +25,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     using SafeMath for uint256;
 
     uint256 public constant MIN_TOTAL_SUPPLY = 1000;
+    uint256 public constant DUST_THRESHOLD = 1000;
 
     IUniswapV3Pool public pool;
     IERC20 public token0;
@@ -100,8 +101,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /**
      * @notice Deposit tokens in proportion to the vault's holdings.
-     * @dev Ignore spare balances held by vault to save gas. Spare balances
-     * should be tiny anyway after rebalance.
      * @param shares Number of vault shares to receive
      * @param amount0Max Revert if amount0 is larger than this
      * @param amount1Max Revert if amount1 is larger than this
@@ -118,47 +117,48 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(shares > 0, "shares");
         require(to != address(0), "to");
 
-        uint128 baseLiquidity;
-        uint128 limitLiquidity;
-
         if (totalSupply() == 0) {
             // For initial deposit, just place just base order and ignore limit order
             require(shares < type(uint128).max, "shares overflow");
             require(shares >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
-            baseLiquidity = uint128(shares);
-            limitLiquidity = 0;
+            (amount0, amount1) =
+                _mintLiquidity(baseLower, baseUpper, uint128(shares), msg.sender);
+
         } else {
             // Calculate proportional liquidity
-            baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
-            limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
+            uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
+            uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
 
             // Round up to ensure sender is not underpaying
             baseLiquidity += baseLiquidity > 0 ? 2 : 0;
             limitLiquidity += limitLiquidity > 0 ? 2 : 0;
+
+            // Deposit liquidity into Uniswap
+            (uint256 base0, uint256 base1) =
+                _mintLiquidity(baseLower, baseUpper, baseLiquidity, msg.sender);
+            (uint256 limit0, uint256 limit1) =
+                _mintLiquidity(limitLower, limitUpper, limitLiquidity, msg.sender);
+
+            // Deposit tokens proportional to unused balances
+            uint256 unused0 = _depositUnused(token0, shares);
+            uint256 unused1 = _depositUnused(token1, shares);
+
+            amount0 = base0.add(limit0).add(unused0);
+            amount1 = base1.add(limit1).add(unused1);
         }
+
+        require(amount0 <= amount0Max, "amount0Max");
+        require(amount1 <= amount1Max, "amount1Max");
 
         // Mint shares
         _mint(to, shares);
         require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
-
-        // Deposit liquidity into Uniswap
-        (uint256 base0, uint256 base1) =
-            _mintLiquidity(baseLower, baseUpper, baseLiquidity, msg.sender);
-        (uint256 limit0, uint256 limit1) =
-            _mintLiquidity(limitLower, limitUpper, limitLiquidity, msg.sender);
-
-        amount0 = base0.add(limit0);
-        amount1 = base1.add(limit1);
-        require(amount0 <= amount0Max, "amount0Max");
-        require(amount1 <= amount1Max, "amount1Max");
 
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
     /**
      * @notice Withdraw tokens in proportion to the vault's holdings.
-     * @dev Ignore spare balances held by vault to save gas. Spare balances
-     * should be tiny anyway after rebalance.
      * @param shares Number of vault shares redeemed by sender
      * @param amount0Min Revert if amount0 is smaller than this
      * @param amount1Min Revert if amount1 is smaller than this
@@ -175,20 +175,28 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(shares > 0, "shares");
         require(to != address(0), "to");
 
-        uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
-        uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
+        {
+            // Calculate proportional liquidity
+            uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
+            uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
 
-        // Burn shares
-        _burn(msg.sender, shares);
+            // Burn shares
+            _burn(msg.sender, shares);
 
-        // Withdraw liquidity from Uniswap
-        (uint256 base0, uint256 base1) =
-            _burnLiquidity(baseLower, baseUpper, baseLiquidity, to, false);
-        (uint256 limit0, uint256 limit1) =
-            _burnLiquidity(limitLower, limitUpper, limitLiquidity, to, false);
+            // Withdraw liquidity from Uniswap
+            (uint256 base0, uint256 base1) =
+                _burnLiquidity(baseLower, baseUpper, baseLiquidity, to, false);
+            (uint256 limit0, uint256 limit1) =
+                _burnLiquidity(limitLower, limitUpper, limitLiquidity, to, false);
 
-        amount0 = base0.add(limit0);
-        amount1 = base1.add(limit1);
+            // Withdraw tokens proportional to unused balances
+            uint256 unused0 = _withdrawUnused(token0, shares, to);
+            uint256 unused1 = _withdrawUnused(token1, shares, to);
+
+            amount0 = base0.add(limit0).add(unused0);
+            amount1 = base1.add(limit1).add(unused1);
+        }
+
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
 
@@ -196,6 +204,23 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(totalSupply() >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
 
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
+    }
+
+    function _depositUnused(IERC20 token, uint256 shares) internal returns (uint256 amount) {
+        uint256 balance = token.balanceOf(address(this));
+        if (balance > DUST_THRESHOLD) {
+            // Add 1 to round up
+            amount = balance.mul(shares).div(totalSupply()).add(1);
+            token.safeTransferFrom(msg.sender, address(this), amount);
+        }
+    }
+
+    function _withdrawUnused(IERC20 token, uint256 shares, address to) internal returns (uint256 amount) {
+        uint256 balance = token.balanceOf(address(this));
+        if (balance > DUST_THRESHOLD) {
+            amount = balance.mul(shares).div(totalSupply());
+            token.safeTransfer(to, amount);
+        }
     }
 
     function rebalance() external override nonReentrant {
