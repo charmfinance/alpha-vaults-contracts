@@ -114,12 +114,12 @@ contract PassiveRebalanceVault is
      * @notice Deposit tokens in proportion to the vault's holdings.
      * @dev Ignore spare balances held by vault to save gas. Spare balances
      * should be tiny anyway after rebalance.
-     * @params shares Number of vault shares to receive
-     * @params maxAmount0 Revert if amount0 is larger than this
-     * @params maxAmount1 Revert if amount1 is larger than this
-     * @params to Recipient of vault shares
-     * @returns amount0 Amount of token0 paid by sender
-     * @returns amount1 Amount of token1 paid by sender
+     * @param shares Number of vault shares to receive
+     * @param maxAmount0 Revert if amount0 is larger than this
+     * @param maxAmount1 Revert if amount1 is larger than this
+     * @param to Recipient of vault shares
+     * @return amount0 Amount of token0 paid by sender
+     * @return amount1 Amount of token1 paid by sender
      */
     function deposit(
         uint256 shares,
@@ -170,10 +170,10 @@ contract PassiveRebalanceVault is
      * @notice Withdraw tokens in proportion to the vault's holdings.
      * @dev Ignore spare balances held by vault to save gas. Spare balances
      * should be tiny anyway after rebalance.
-     * @params shares Number of vault shares redeemed by sender
-     * @params to Recipient of tokens
-     * @returns amount0 Amount of token0 returned to recipient
-     * @returns amount1 Amount of token1 returned to recipient
+     * @param shares Number of vault shares redeemed by sender
+     * @param to Recipient of tokens
+     * @return amount0 Amount of token0 returned to recipient
+     * @return amount1 Amount of token1 returned to recipient
      */
     function withdraw(uint256 shares, address to)
         external
