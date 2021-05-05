@@ -120,9 +120,13 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         if (totalSupply() == 0) {
             // For initial deposit, just place just base order and ignore limit order
             require(shares < type(uint128).max, "shares overflow");
-            require(shares >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
             (amount0, amount1) =
                 _mintLiquidity(baseLower, baseUpper, uint128(shares), msg.sender);
+
+            // Lock the first MIN_TOTAL_SUPPLY shares
+            require(shares > MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
+            shares = shares.sub(MIN_TOTAL_SUPPLY);
+            _mint(address(this), MIN_TOTAL_SUPPLY);
 
         } else {
             // Calculate proportional liquidity
@@ -199,10 +203,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
-
-        // The first MIN_TOTAL_SUPPLY shares are locked
-        require(totalSupply() >= MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
-
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
     }
 

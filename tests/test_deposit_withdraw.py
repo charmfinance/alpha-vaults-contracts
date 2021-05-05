@@ -26,7 +26,7 @@ def test_deposit_initial(
     amount0, amount1 = tx.return_value
 
     # Check return values
-    assert shares == vault.balanceOf(recipient) > 0
+    assert approx(shares - 1000) == vault.balanceOf(recipient) > 0
     assert amount0 == balance0 - tokens[0].balanceOf(user)
     assert amount1 == balance1 - tokens[1].balanceOf(user)
 
@@ -34,7 +34,7 @@ def test_deposit_initial(
     assert tx.events["Deposit"] == {
         "sender": user,
         "to": recipient,
-        "shares": shares,
+        "shares": shares - 1000,
         "amount0": amount0,
         "amount1": amount1,
     }
@@ -311,13 +311,9 @@ def test_withdraw_checks(vault, user, recipient):
 
     with reverts("shares"):
         vault.withdraw(0, 0, 0, recipient, {"from": user})
-    with reverts("MIN_TOTAL_SUPPLY"):
-        vault.withdraw(shares - 1, 0, 0, recipient, {"from": user})
     with reverts("to"):
-        vault.withdraw(1e8, 0, 0, ZERO_ADDRESS, {"from": user})
+        vault.withdraw(shares - 1000, 0, 0, ZERO_ADDRESS, {"from": user})
     with reverts("amount0Min"):
-        vault.withdraw(1e8, 1e18, 0, recipient, {"from": user})
+        vault.withdraw(shares - 1000, 1e18, 0, recipient, {"from": user})
     with reverts("amount1Min"):
-        vault.withdraw(1e8, 0, 1e18, recipient, {"from": user})
-    with reverts("MIN_TOTAL_SUPPLY"):
-        vault.withdraw(shares, 0, 0, recipient, {"from": user})
+        vault.withdraw(shares - 1000, 0, 1e18, recipient, {"from": user})
