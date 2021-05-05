@@ -105,16 +105,16 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      * @dev Ignore spare balances held by vault to save gas. Spare balances
      * should be tiny anyway after rebalance.
      * @param shares Number of vault shares to receive
-     * @param maxAmount0 Revert if amount0 is larger than this
-     * @param maxAmount1 Revert if amount1 is larger than this
+     * @param amount0Max Revert if amount0 is larger than this
+     * @param amount1Max Revert if amount1 is larger than this
      * @param to Recipient of vault shares
      * @return amount0 Amount of token0 paid by sender
      * @return amount1 Amount of token1 paid by sender
      */
     function deposit(
         uint256 shares,
-        uint256 maxAmount0,
-        uint256 maxAmount1,
+        uint256 amount0Max,
+        uint256 amount1Max,
         address to
     ) external override returns (uint256 amount0, uint256 amount1) {
         require(to != address(0), "to");
@@ -151,8 +151,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
         amount0 = baseAmount0.add(skewAmount0);
         amount1 = baseAmount1.add(skewAmount1);
-        require(amount0 <= maxAmount0, "maxAmount0");
-        require(amount1 <= maxAmount1, "maxAmount1");
+        require(amount0 <= amount0Max, "amount0Max");
+        require(amount1 <= amount1Max, "amount1Max");
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
