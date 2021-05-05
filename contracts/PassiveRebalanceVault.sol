@@ -15,7 +15,6 @@ import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.so
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
-import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
 import "../interfaces/IVault.sol";
 
@@ -23,12 +22,7 @@ import "../interfaces/IVault.sol";
  * @title   Passive Rebalance Vault
  * @notice  A vault that provides liquidity on Uniswap V3 on behalf of users
  */
-contract PassiveRebalanceVault is
-    IVault,
-    IUniswapV3MintCallback,
-    ERC20,
-    ReentrancyGuard
-{
+contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
@@ -275,17 +269,17 @@ contract PassiveRebalanceVault is
 
         if (payer == address(this)) {
             if (amount0 > 0) {
-                TransferHelper.safeTransfer(address(token0), msg.sender, amount0);
+                token0.safeTransfer(msg.sender, amount0);
             }
             if (amount1 > 0) {
-                TransferHelper.safeTransfer(address(token1), msg.sender, amount1);
+                token1.safeTransfer(msg.sender, amount1);
             }
         } else {
             if (amount0 > 0) {
-                TransferHelper.safeTransferFrom(address(token0), payer, msg.sender, amount0);
+                token0.safeTransferFrom(payer, msg.sender, amount0);
             }
             if (amount1 > 0) {
-                TransferHelper.safeTransferFrom(address(token1), payer, msg.sender, amount1);
+                token1.safeTransferFrom(payer, msg.sender, amount1);
             }
         }
     }
