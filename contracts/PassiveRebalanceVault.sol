@@ -18,7 +18,35 @@ import "../interfaces/IVault.sol";
 
 /**
  * @title   Passive Rebalance Vault
- * @notice  A vault that provides liquidity on Uniswap V3 on behalf of users
+ * @notice  Automatically manages liquidity on Uniswap V3 on behalf of users.
+ *
+ *          When a user calls deposit(), they have to add amounts of the two
+ *          tokens proportional to the vault's current holdings. These are
+ *          directly deposited into the Uniswap V3 pool. Similarly, when a user
+ *          calls withdraw(), the proportion of liquidity is withdrawn from the
+ *          pool and the resulting amounts are returned to the user.
+ *
+ *          The rebalance() method has to be called periodically. This method
+ *          withdraws all liquidity from the pool, collects fees and then uses
+ *          all the tokens it holds to place the two range orders below.
+ *
+ *          1. Base order is placed between X - B and X + B + TS.
+ *          2. Limit order is placed between X - L and X, or between X + TS and
+ *          X + L + TS, depending on which token it holds more of.
+ *
+ *          where:
+ *
+ *          X = current tick rounded down to multiple of tick spacing
+ *          TS = tick spacing
+ *          B = base threshold
+ *          L = limit threshold
+ *
+ *          Note that after the rebalance, the vault should theoretically
+ *          have deposited all its tokens and shouldn't have any unused
+ *          balance. The base order deposits equal values, so it uses up
+ *          the entire balance of whichever token it holds less of. Then, the
+ *          limit order is placed only one side of the current price so that
+ *          the other token which it holds more of is used up.
  */
 contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -53,8 +81,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /**
      * @param _pool Underlying Uniswap V3 pool
-     * @param _baseThreshold Half the width of base range order in ticks
-     * @param _limitThreshold Width of limit range order in ticks
+     * @param _baseThreshold Used to determine base range
+     * @param _limitThreshold Used to determine limit range
      * @param _maxTwapDeviation How much current price can deviate from TWAP
      * during rebalance
      * @param _twapDuration Duration of TWAP in seconds used for max TWAP
@@ -93,7 +121,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(_baseThreshold > 0, "baseThreshold");
         require(_limitThreshold > 0, "limitThreshold");
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
-        _checkMidAndTwap();
+        _checkMid();
 
         (baseLower, baseUpper) = _baseRange();
         (limitLower, limitUpper) = _limitRange();
@@ -101,10 +129,10 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /**
      * @notice Deposit tokens in proportion to the vault's holdings.
-     * @param shares Number of vault shares to receive
-     * @param amount0Max Revert if amount0 is larger than this
-     * @param amount1Max Revert if amount1 is larger than this
-     * @param to Recipient of vault shares
+     * @param shares Shares minted to recipient
+     * @param amount0Max Revert if resulting amount0 is larger than this
+     * @param amount1Max Revert if resulting amount1 is larger than this
+     * @param to Recipient of shares
      * @return amount0 Amount of token0 paid by sender
      * @return amount1 Amount of token1 paid by sender
      */
@@ -118,7 +146,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(to != address(0), "to");
 
         if (totalSupply() == 0) {
-            // For initial deposit, just place just base order and ignore limit order
+            // For the initial deposit, place just the base order and ignore
+            // the limit order
             require(shares < type(uint128).max, "shares overflow");
             (amount0, amount1) = _mintLiquidity(
                 baseLower,
@@ -127,12 +156,13 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
                 msg.sender
             );
 
-            // Lock the first MIN_TOTAL_SUPPLY shares
+            // Lock the first MIN_TOTAL_SUPPLY shares by minting to self
             require(shares > MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
             shares = shares.sub(MIN_TOTAL_SUPPLY);
             _mint(address(this), MIN_TOTAL_SUPPLY);
+
         } else {
-            // Calculate proportional liquidity
+            // Calculate how much liquidity to deposit
             uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
             uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
 
@@ -140,13 +170,13 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             baseLiquidity += baseLiquidity > 0 ? 2 : 0;
             limitLiquidity += limitLiquidity > 0 ? 2 : 0;
 
-            // Deposit liquidity into Uniswap
+            // Deposit liquidity into Uniswap pool
             (uint256 base0, uint256 base1) =
                 _mintLiquidity(baseLower, baseUpper, baseLiquidity, msg.sender);
             (uint256 limit0, uint256 limit1) =
                 _mintLiquidity(limitLower, limitUpper, limitLiquidity, msg.sender);
 
-            // Deposit tokens proportional to unused balances
+            // Transfer in tokens proportional to unused balances
             uint256 unused0 = _depositUnused(token0, shares);
             uint256 unused1 = _depositUnused(token1, shares);
 
@@ -157,7 +187,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(amount0 <= amount0Max, "amount0Max");
         require(amount1 <= amount1Max, "amount1Max");
 
-        // Mint shares
         _mint(to, shares);
         require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
 
@@ -166,12 +195,12 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /**
      * @notice Withdraw tokens in proportion to the vault's holdings.
-     * @param shares Number of vault shares redeemed by sender
-     * @param amount0Min Revert if amount0 is smaller than this
-     * @param amount1Min Revert if amount1 is smaller than this
+     * @param shares Shares burned by sender
+     * @param amount0Min Revert if resulting amount0 is smaller than this
+     * @param amount1Min Revert if resulting amount1 is smaller than this
      * @param to Recipient of tokens
-     * @return amount0 Amount of token0 returned to recipient
-     * @return amount1 Amount of token1 returned to recipient
+     * @return amount0 Amount of token0 sent to recipient
+     * @return amount1 Amount of token1 sent to recipient
      */
     function withdraw(
         uint256 shares,
@@ -183,20 +212,20 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(to != address(0), "to");
 
         {
-            // Calculate proportional liquidity
+            // Calculate how much liquidity to withdraw
             uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
             uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
 
             // Burn shares
             _burn(msg.sender, shares);
 
-            // Withdraw liquidity from Uniswap
+            // Withdraw liquidity from Uniswap pool
             (uint256 base0, uint256 base1) =
                 _burnLiquidity(baseLower, baseUpper, baseLiquidity, to, false);
             (uint256 limit0, uint256 limit1) =
                 _burnLiquidity(limitLower, limitUpper, limitLiquidity, to, false);
 
-            // Withdraw tokens proportional to unused balances
+            // Transfer out tokens proportional to unused balances
             uint256 unused0 = _withdrawUnused(token0, shares, to);
             uint256 unused1 = _withdrawUnused(token1, shares, to);
 
@@ -209,14 +238,17 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
     }
 
+    /**
+     * @notice Update vault's positions depending on how the price has moved.
+     */
     function rebalance() external override nonReentrant {
         require(keeper == address(0) || msg.sender == keeper, "keeper");
         require(block.timestamp >= lastUpdate.add(rebalanceCooldown), "cooldown");
         lastUpdate = block.timestamp;
 
-        _checkMidAndTwap();
+        _checkMid();
 
-        // Withdraw all liquidity from Uniswap
+        // Withdraw all liquidity and collect all fees from Uniswap pool
         uint128 basePosition = _position(baseLower, baseUpper);
         uint128 limitPosition = _position(limitLower, limitUpper);
         _burnLiquidity(baseLower, baseUpper, basePosition, address(this), true);
@@ -238,8 +270,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         uint128 limitLiquidity = _maxDepositable(limitLower, limitUpper);
         _mintLiquidity(limitLower, limitUpper, limitLiquidity, address(this));
 
-        // Check base and limit ranges aren't the same, otherwise calculations
-        // would fail elsewhere
+        // Assert base and limit ranges aren't the same, otherwise positions
+        // would get mixed up
         assert(baseLower != limitLower || baseUpper != limitUpper);
     }
 
@@ -262,8 +294,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     }
 
     /**
-     * @notice Calculates total holdings of token0 and token1, i.e. how
-     * much this vault would hold if it withdrew all its liquidity.
+     * @notice Calculate total holdings of token0 and token1, or how much of
+     * each token this vault would hold if it withdrew all its liquidity.
      */
     function getTotalAmounts() external view override returns (uint256 total0, uint256 total1) {
         (, uint256 base0, uint256 base1) = getBasePosition();
@@ -272,6 +304,9 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         total1 = token1.balanceOf(address(this)).add(base1).add(limit1);
     }
 
+    /**
+     * @notice Calculate liquidity and equivalent token amounts of base order.
+     */
     function getBasePosition()
         public
         view
@@ -285,6 +320,9 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         (amount0, amount1) = _amountsForLiquidity(baseLower, baseUpper, liquidity);
     }
 
+    /**
+     * @notice Calculate liquidity and equivalent token amounts of limit order.
+     */
     function getLimitPosition()
         public
         view
@@ -298,6 +336,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         (amount0, amount1) = _amountsForLiquidity(limitLower, limitUpper, liquidity);
     }
 
+    /**
+     * @notice Fetch TWAP from Uniswap V3 pool.
+     * @dev Also serves as a check in the constructor that the pool holds
+     * enough observations to calculate a TWAP.
+     */
     function getTwap() public view returns (int24) {
         uint32[] memory secondsAgo = new uint32[](2);
         secondsAgo[0] = twapDuration;
@@ -324,6 +367,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         }
     }
 
+    /// @param collectAll Whether to also collect all accumulated fees.
     function _burnLiquidity(
         int24 tickLower,
         int24 tickUpper,
@@ -344,22 +388,26 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         }
     }
 
+    /// @dev If vault holds enough unused token balance, transfer in
+    /// proportional amount from sender.
     function _depositUnused(IERC20 token, uint256 shares) internal returns (uint256 amount) {
         uint256 balance = token.balanceOf(address(this));
-        if (balance > DUST_THRESHOLD) {
+        if (balance >= DUST_THRESHOLD) {
             // Add 1 to round up
             amount = balance.mul(shares).div(totalSupply()).add(1);
             token.safeTransferFrom(msg.sender, address(this), amount);
         }
     }
 
+    /// @dev If vault holds enough unused token balance, transfer proportional
+    /// amount to sender.
     function _withdrawUnused(
         IERC20 token,
         uint256 shares,
         address to
     ) internal returns (uint256 amount) {
         uint256 balance = token.balanceOf(address(this));
-        if (balance > DUST_THRESHOLD) {
+        if (balance >= DUST_THRESHOLD) {
             amount = balance.mul(shares).div(totalSupply());
             token.safeTransfer(to, amount);
         }
@@ -367,8 +415,9 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /// @dev Revert if current price is too close to min or max ticks allowed
     /// by Uniswap, or if it deviates too much from the TWAP. Should be called
-    /// whenever base and limit ranges are updated.
-    function _checkMidAndTwap() internal view {
+    /// whenever base and limit ranges are updated. In practice, prices should
+    /// only become this extreme if there's no liquidity in the Uniswap pool.
+    function _checkMid() internal view {
         (, int24 mid, , , , , ) = pool.slot0();
         int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
         require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
@@ -382,8 +431,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     }
 
     /// @dev Return lower and upper ticks for the base order. This order is
-    /// symmetric around the current mid and its width in ticks is double of
-    /// `baseThreshold`.
+    /// roughly symmetric around the current price.
     function _baseRange() internal view returns (int24, int24) {
         (, int24 mid, , , , , ) = pool.slot0();
         int24 midFloor = _floor(mid);
@@ -393,7 +441,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /// @dev Return lower and upper ticks for the limit order. This order helps
     /// the vault rebalance closer to 50/50 and is either just above or just
-    /// below the current mid. Its width in ticks is equal to `limitThreshold`.
+    /// below the current price, depending on which token the vault holds more
+    /// of.
     function _limitRange() internal view returns (int24, int24) {
         (, int24 mid, , , , , ) = pool.slot0();
         int24 midFloor = _floor(mid);
@@ -442,12 +491,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     /// of tickSpacing.
     function _floor(int24 tick) internal view returns (int24) {
         int24 compressed = tick / tickSpacing;
-        if (tick < 0 && tick % tickSpacing != 0) {
-            compressed--;
-        }
+        if (tick < 0 && tick % tickSpacing != 0) compressed--;
         return compressed * tickSpacing;
     }
 
+    /// @dev Wrapper around Uniswap periphery method for convenience.
     function _amountsForLiquidity(
         int24 tickLower,
         int24 tickUpper,
@@ -463,6 +511,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             );
     }
 
+    /// @dev Wrapper around Uniswap periphery method for convenience.
     function _liquidityForAmounts(
         int24 tickLower,
         int24 tickUpper,
@@ -481,8 +530,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     }
 
     /**
-     * @notice Set base threshold B. From the next rebalance, the strategy will
-     * move the base order to the range [floor(mid) - B, ceil(mid) + B].
+     * @notice Set base threshold B.
      */
     function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {
         require(_baseThreshold % tickSpacing == 0, "baseThreshold");
@@ -491,9 +539,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     }
 
     /**
-     * @notice Set limit threshold S. From the next rebalance, the strategy
-     * will move the limit order to the range [floor(mid) - S, floor(mid)] or
-     * [ceil(mid), ceil(mid) + S] depending on which token it holds more of.
+     * @notice Set limit threshold.
      */
     function setLimitThreshold(int24 _limitThreshold) external onlyGovernance {
         require(_limitThreshold % tickSpacing == 0, "limitThreshold");
@@ -512,7 +558,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     }
 
     /**
-     * @notice Set duration of TWAP in seconds used for max TWAP deviations
+     * @notice Set duration of TWAP in seconds used for max TWAP deviation
      * check.
      */
     function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
@@ -533,14 +579,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      */
     function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {
         maxTotalSupply = _maxTotalSupply;
-    }
-
-    /**
-     * @notice Governance address is not updated until the new governance
-     * address has called acceptGovernance() to accept this responsibility.
-     */
-    function setGovernance(address _governance) external onlyGovernance {
-        pendingGovernance = _governance;
     }
 
     /**
@@ -578,6 +616,14 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     ) external onlyGovernance {
         require(!finalized, "finalized");
         _burnLiquidity(tickLower, tickUpper, liquidity, msg.sender, true);
+    }
+
+    /**
+     * @notice Governance address is not updated until the new governance
+     * address has called acceptGovernance() to accept this responsibility.
+     */
+    function setGovernance(address _governance) external onlyGovernance {
+        pendingGovernance = _governance;
     }
 
     /**
