@@ -2,19 +2,21 @@
 
 pragma solidity 0.7.6;
 
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
-import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
 /**
- * @dev    DO NOT USE IN PRODUCTION! This is a simple router that's only
- *         intended for use in tests and lacks safety checks such as slippage
- *         and callback caller checks.
+ * @title  TestRouter
+ * @dev    DO NOT USE IN PRODUCTION. This is only intended to be used for
+ *         tests and lacks slippage and callback caller checks.
  */
-contract Router is IUniswapV3MintCallback, IUniswapV3SwapCallback {
+contract TestRouter is IUniswapV3MintCallback, IUniswapV3SwapCallback {
+    using SafeERC20 for IERC20;
+
     function mint(
         IUniswapV3Pool pool,
         int24 tickLower,
@@ -66,9 +68,9 @@ contract Router is IUniswapV3MintCallback, IUniswapV3SwapCallback {
         bytes calldata data
     ) internal {
         IUniswapV3Pool pool = IUniswapV3Pool(msg.sender);
-        address sender = abi.decode(data, (address));
+        address payer = abi.decode(data, (address));
 
-        TransferHelper.safeTransferFrom(pool.token0(), sender, msg.sender, amount0);
-        TransferHelper.safeTransferFrom(pool.token1(), sender, msg.sender, amount1);
+        IERC20(pool.token0()).safeTransferFrom(payer, msg.sender, amount0);
+        IERC20(pool.token1()).safeTransferFrom(payer, msg.sender, amount1);
     }
 }

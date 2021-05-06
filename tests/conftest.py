@@ -28,8 +28,8 @@ def users(gov, user, recipient):
 
 
 @pytest.fixture
-def router(Router, gov):
-    yield gov.deploy(Router)
+def router(TestRouter, gov):
+    yield gov.deploy(TestRouter)
 
 
 @pytest.fixture
