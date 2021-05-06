@@ -120,14 +120,17 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         if (totalSupply() == 0) {
             // For initial deposit, just place just base order and ignore limit order
             require(shares < type(uint128).max, "shares overflow");
-            (amount0, amount1) =
-                _mintLiquidity(baseLower, baseUpper, uint128(shares), msg.sender);
+            (amount0, amount1) = _mintLiquidity(
+                baseLower,
+                baseUpper,
+                uint128(shares),
+                msg.sender
+            );
 
             // Lock the first MIN_TOTAL_SUPPLY shares
             require(shares > MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
             shares = shares.sub(MIN_TOTAL_SUPPLY);
             _mint(address(this), MIN_TOTAL_SUPPLY);
-
         } else {
             // Calculate proportional liquidity
             uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
@@ -206,23 +209,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
     }
 
-    function _depositUnused(IERC20 token, uint256 shares) internal returns (uint256 amount) {
-        uint256 balance = token.balanceOf(address(this));
-        if (balance > DUST_THRESHOLD) {
-            // Add 1 to round up
-            amount = balance.mul(shares).div(totalSupply()).add(1);
-            token.safeTransferFrom(msg.sender, address(this), amount);
-        }
-    }
-
-    function _withdrawUnused(IERC20 token, uint256 shares, address to) internal returns (uint256 amount) {
-        uint256 balance = token.balanceOf(address(this));
-        if (balance > DUST_THRESHOLD) {
-            amount = balance.mul(shares).div(totalSupply());
-            token.safeTransfer(to, amount);
-        }
-    }
-
     function rebalance() external override nonReentrant {
         require(keeper == address(0) || msg.sender == keeper, "keeper");
         require(block.timestamp >= lastUpdate.add(rebalanceCooldown), "cooldown");
@@ -255,43 +241,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         // Check base and limit ranges aren't the same, otherwise calculations
         // would fail elsewhere
         assert(baseLower != limitLower || baseUpper != limitUpper);
-    }
-
-    function _mintLiquidity(
-        int24 tickLower,
-        int24 tickUpper,
-        uint128 liquidity,
-        address payer
-    ) internal returns (uint256 amount0, uint256 amount1) {
-        if (liquidity > 0) {
-            (amount0, amount1) = pool.mint(
-                address(this),
-                tickLower,
-                tickUpper,
-                liquidity,
-                abi.encode(payer)
-            );
-        }
-    }
-
-    function _burnLiquidity(
-        int24 tickLower,
-        int24 tickUpper,
-        uint128 liquidity,
-        address to,
-        bool collectAll
-    ) internal returns (uint256 amount0, uint256 amount1) {
-        if (liquidity > 0) {
-            // Burn liquidity
-            (uint256 owed0, uint256 owed1) = pool.burn(tickLower, tickUpper, liquidity);
-
-            // Collect amount owed
-            uint128 collect0 = collectAll ? type(uint128).max : uint128(owed0);
-            uint128 collect1 = collectAll ? type(uint128).max : uint128(owed1);
-            if (collect0 > 0 || collect1 > 0) {
-                (amount0, amount1) = pool.collect(to, tickLower, tickUpper, collect0, collect1);
-            }
-        }
     }
 
     /// @dev Callback for Uniswap V3 pool.
@@ -349,13 +298,71 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         (amount0, amount1) = _amountsForLiquidity(limitLower, limitUpper, liquidity);
     }
 
-    function getTwap() internal view returns (int24) {
+    function getTwap() public view returns (int24) {
         uint32[] memory secondsAgo = new uint32[](2);
         secondsAgo[0] = twapDuration;
         secondsAgo[1] = 0;
 
         (int56[] memory tickCumulatives, ) = pool.observe(secondsAgo);
         return int24((tickCumulatives[1] - tickCumulatives[0]) / twapDuration);
+    }
+
+    function _mintLiquidity(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity,
+        address payer
+    ) internal returns (uint256 amount0, uint256 amount1) {
+        if (liquidity > 0) {
+            (amount0, amount1) = pool.mint(
+                address(this),
+                tickLower,
+                tickUpper,
+                liquidity,
+                abi.encode(payer)
+            );
+        }
+    }
+
+    function _burnLiquidity(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity,
+        address to,
+        bool collectAll
+    ) internal returns (uint256 amount0, uint256 amount1) {
+        if (liquidity > 0) {
+            // Burn liquidity
+            (uint256 owed0, uint256 owed1) = pool.burn(tickLower, tickUpper, liquidity);
+
+            // Collect amount owed
+            uint128 collect0 = collectAll ? type(uint128).max : uint128(owed0);
+            uint128 collect1 = collectAll ? type(uint128).max : uint128(owed1);
+            if (collect0 > 0 || collect1 > 0) {
+                (amount0, amount1) = pool.collect(to, tickLower, tickUpper, collect0, collect1);
+            }
+        }
+    }
+
+    function _depositUnused(IERC20 token, uint256 shares) internal returns (uint256 amount) {
+        uint256 balance = token.balanceOf(address(this));
+        if (balance > DUST_THRESHOLD) {
+            // Add 1 to round up
+            amount = balance.mul(shares).div(totalSupply()).add(1);
+            token.safeTransferFrom(msg.sender, address(this), amount);
+        }
+    }
+
+    function _withdrawUnused(
+        IERC20 token,
+        uint256 shares,
+        address to
+    ) internal returns (uint256 amount) {
+        uint256 balance = token.balanceOf(address(this));
+        if (balance > DUST_THRESHOLD) {
+            amount = balance.mul(shares).div(totalSupply());
+            token.safeTransfer(to, amount);
+        }
     }
 
     /// @dev Revert if current price is too close to min or max ticks allowed

@@ -20,25 +20,26 @@ contract Router is IUniswapV3MintCallback, IUniswapV3SwapCallback {
         int24 tickLower,
         int24 tickUpper,
         uint128 amount
-    ) external {
+    ) external returns (uint256, uint256) {
         int24 tickSpacing = pool.tickSpacing();
         require(tickLower % tickSpacing == 0, "tickLower must be a multiple of tickSpacing");
         require(tickUpper % tickSpacing == 0, "tickUpper must be a multiple of tickSpacing");
-        pool.mint(msg.sender, tickLower, tickUpper, amount, abi.encode(msg.sender));
+        return pool.mint(msg.sender, tickLower, tickUpper, amount, abi.encode(msg.sender));
     }
 
     function swap(
         IUniswapV3Pool pool,
         bool zeroForOne,
         int256 amountSpecified
-    ) external {
-        pool.swap(
-            msg.sender,
-            zeroForOne,
-            amountSpecified,
-            zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1,
-            abi.encode(msg.sender)
-        );
+    ) external returns (int256, int256) {
+        return
+            pool.swap(
+                msg.sender,
+                zeroForOne,
+                amountSpecified,
+                zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1,
+                abi.encode(msg.sender)
+            );
     }
 
     function uniswapV3MintCallback(
