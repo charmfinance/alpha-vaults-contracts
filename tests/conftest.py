@@ -4,7 +4,7 @@ import pytest
 from web3 import Web3
 
 
-UNISWAP_V3_CORE = "Uniswap/uniswap-v3-core@1.0.0-rc.2"
+UNISWAP_V3_CORE = "Uniswap/uniswap-v3-core@1.0.0"
 
 
 @pytest.fixture

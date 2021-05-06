@@ -3,7 +3,7 @@ from math import floor, sqrt
 import time
 
 
-UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0-rc.2")
+UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0")
 
 # rinkeby
 FACTORY = "0xAE28628c0fdFb5e54d60FEDC6C9085199aec14dF"

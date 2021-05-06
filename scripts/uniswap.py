@@ -11,7 +11,7 @@ import json
 from math import floor, log, sqrt
 
 
-UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0-rc.2")
+UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0")
 
 
 # rinkeby
