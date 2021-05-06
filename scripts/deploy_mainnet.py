@@ -13,6 +13,7 @@ MAX_TOTAL_SUPPLY = 1e18
 
 def main():
     deployer = accounts.load("deployer")
+    balance = deployer.balance()
 
     vault = deployer.deploy(
         PassiveRebalanceVault,
@@ -25,4 +26,6 @@ def main():
         MAX_TOTAL_SUPPLY,
         publish_source=False
     )
+
+    print(f"Gas used: {(balance - deployer.balance()) / 1e18:.4f} ETH")
     print(f"Vault address: {vault.address}")
