@@ -378,6 +378,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         if (liquidity > 0) {
             // Burn liquidity
             (uint256 owed0, uint256 owed1) = pool.burn(tickLower, tickUpper, liquidity);
+            require(owed0 < type(uint128).max, "owed0 overflow");
+            require(owed1 < type(uint128).max, "owed1 overflow");
 
             // Collect amount owed
             uint128 collect0 = collectAll ? type(uint128).max : uint128(owed0);
