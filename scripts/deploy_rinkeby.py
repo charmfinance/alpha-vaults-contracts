@@ -39,9 +39,7 @@ def main():
     router.mint(pool, -max_tick, max_tick, 1e15, {"from": deployer})
 
     # Set short TWAP duration so that check in constructor passes
-    vault = deployer.deploy(
-        PassiveRebalanceVault, pool, 1800, 600, 100, 1, 600, 100e18
-    )
+    vault = deployer.deploy(PassiveRebalanceVault, pool, 1800, 600, 100, 1, 600, 100e18)
 
     print(f"Vault address: {vault.address}")
     print(f"Router address: {router.address}")
