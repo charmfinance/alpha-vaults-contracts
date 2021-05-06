@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Unlicense
 
 pragma solidity 0.7.6;
-pragma abicoder v2;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -156,19 +155,14 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
                 msg.sender
             );
 
-            // Lock the first MIN_TOTAL_SUPPLY shares by minting to self
+            // Lock small number of shares and mint rest to recipient
             require(shares > MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
-            shares = shares.sub(MIN_TOTAL_SUPPLY);
             _mint(address(this), MIN_TOTAL_SUPPLY);
-
+            shares = shares.sub(MIN_TOTAL_SUPPLY);
         } else {
             // Calculate how much liquidity to deposit
             uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
             uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
-
-            // Round up to ensure sender is not underpaying
-            baseLiquidity += baseLiquidity > 0 ? 2 : 0;
-            limitLiquidity += limitLiquidity > 0 ? 2 : 0;
 
             // Deposit liquidity into Uniswap pool
             (uint256 base0, uint256 base1) =
@@ -180,16 +174,17 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             uint256 unused0 = _depositUnused(token0, shares);
             uint256 unused1 = _depositUnused(token1, shares);
 
+            // Sum up total amounts paid by sender
             amount0 = base0.add(limit0).add(unused0);
             amount1 = base1.add(limit1).add(unused1);
         }
 
+        // Mint shares to recipient
+        _mint(to, shares);
+
         require(amount0 <= amount0Max, "amount0Max");
         require(amount1 <= amount1Max, "amount1Max");
-
-        _mint(to, shares);
         require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
-
         emit Deposit(msg.sender, to, shares, amount0, amount1);
     }
 
@@ -216,9 +211,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
             uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
 
-            // Burn shares
-            _burn(msg.sender, shares);
-
             // Withdraw liquidity from Uniswap pool
             (uint256 base0, uint256 base1) =
                 _burnLiquidity(baseLower, baseUpper, baseLiquidity, to, false);
@@ -229,9 +221,13 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             uint256 unused0 = _withdrawUnused(token0, shares, to);
             uint256 unused1 = _withdrawUnused(token1, shares, to);
 
+            // Sum up total amounts sent to recipient
             amount0 = base0.add(limit0).add(unused0);
             amount1 = base1.add(limit1).add(unused1);
         }
+
+        // Burn shares
+        _burn(msg.sender, shares);
 
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");

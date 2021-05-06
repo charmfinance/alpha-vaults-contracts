@@ -1,4 +1,4 @@
-from brownie import accounts, project, MockToken, PassiveRebalanceVault, Router
+from brownie import accounts, project, MockToken, PassiveRebalanceVault, TestRouter
 from math import floor, sqrt
 import time
 
@@ -31,7 +31,7 @@ def main():
     # Increase cardinality so TWAP works
     pool.increaseObservationCardinalityNext(100, {"from": deployer})
 
-    router = deployer.deploy(Router)
+    router = deployer.deploy(TestRouter)
     MockToken.at(eth).approve(router, 1 << 255, {"from": deployer})
     MockToken.at(usdc).approve(router, 1 << 255, {"from": deployer})
 
@@ -40,7 +40,7 @@ def main():
 
     # Set short TWAP duration so that check in constructor passes
     vault = deployer.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 500, 1, 600, 100e18
+        PassiveRebalanceVault, pool, 1800, 600, 100, 1, 600, 100e18
     )
 
     print(f"Vault address: {vault.address}")
