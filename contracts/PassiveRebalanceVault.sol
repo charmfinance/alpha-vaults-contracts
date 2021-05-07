@@ -110,12 +110,12 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         maxTotalSupply = _maxTotalSupply;
         governance = msg.sender;
 
-        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
-        _checkThreshold(_baseThreshold);
-        _checkThreshold(_limitThreshold);
-
         int24 mid = _mid();
         _checkMid(mid);
+        _checkThreshold(_baseThreshold);
+        _checkThreshold(_limitThreshold);
+        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+
         (baseLower, baseUpper) = _baseRange(mid);
         (limitLower, limitUpper) = _bidRange(mid);
     }
@@ -527,7 +527,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         (, mid, , , , , ) = pool.slot0();
     }
 
-    function _uint128Safe(uint256 x) internal view returns (uint128) {
+    function _uint128Safe(uint256 x) internal pure returns (uint128) {
         assert(x <= type(uint128).max);
         return uint128(x);
     }
