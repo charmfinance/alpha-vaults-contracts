@@ -4,19 +4,23 @@ from brownie import reverts
 def test_governance_methods(vault, tokens, gov, user, recipient):
     with reverts("governance"):
         vault.setBaseThreshold(0, {"from": user})
-    with reverts("baseThreshold"):
+    with reverts("threshold not tick multiple"):
         vault.setBaseThreshold(2401, {"from": gov})
-    with reverts("baseThreshold"):
+    with reverts("threshold not positive"):
         vault.setBaseThreshold(0, {"from": gov})
+    with reverts("threshold too high"):
+        vault.setBaseThreshold(887280, {"from": gov})
     vault.setBaseThreshold(4800, {"from": gov})
     assert vault.baseThreshold() == 4800
 
     with reverts("governance"):
         vault.setLimitThreshold(0, {"from": user})
-    with reverts("limitThreshold"):
+    with reverts("threshold not tick multiple"):
         vault.setLimitThreshold(1201, {"from": gov})
-    with reverts("limitThreshold"):
+    with reverts("threshold not positive"):
         vault.setLimitThreshold(0, {"from": gov})
+    with reverts("threshold too high"):
+        vault.setLimitThreshold(887280, {"from": gov})
     vault.setLimitThreshold(600, {"from": gov})
     assert vault.limitThreshold() == 600
 

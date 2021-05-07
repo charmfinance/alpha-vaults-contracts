@@ -31,21 +31,31 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
 
 
 def test_constructor_checks(PassiveRebalanceVault, pool, gov):
-    with reverts("baseThreshold"):
+    with reverts("threshold not tick multiple"):
         gov.deploy(
             PassiveRebalanceVault, pool, 2401, 1200, 500, 600, 23 * 60 * 60, 100e18
         )
 
-    with reverts("limitThreshold"):
+    with reverts("threshold not tick multiple"):
         gov.deploy(
             PassiveRebalanceVault, pool, 2400, 1201, 500, 600, 23 * 60 * 60, 100e18
         )
 
-    with reverts("baseThreshold"):
+    with reverts("threshold not positive"):
         gov.deploy(PassiveRebalanceVault, pool, 0, 1200, 500, 600, 23 * 60 * 60, 100e18)
 
-    with reverts("limitThreshold"):
+    with reverts("threshold not positive"):
         gov.deploy(PassiveRebalanceVault, pool, 2400, 0, 500, 600, 23 * 60 * 60, 100e18)
+
+    with reverts("threshold too high"):
+        gov.deploy(
+            PassiveRebalanceVault, pool, 887280, 1200, 500, 600, 23 * 60 * 60, 100e18
+        )
+
+    with reverts("threshold too high"):
+        gov.deploy(
+            PassiveRebalanceVault, pool, 2400, 887280, 500, 600, 23 * 60 * 60, 100e18
+        )
 
     # check works with small thresholds
     gov.deploy(PassiveRebalanceVault, pool, 60, 1200, 500, 600, 23 * 60 * 60, 100e18)
