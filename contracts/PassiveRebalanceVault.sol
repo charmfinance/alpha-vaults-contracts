@@ -113,10 +113,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
         _checkThreshold(_baseThreshold);
         _checkThreshold(_limitThreshold);
-        _checkMid(_mid());
 
-        (baseLower, baseUpper) = _baseRange();
-        (limitLower, limitUpper) = _limitRange();
+        int24 mid = _mid();
+        _checkMid(mid);
+        (baseLower, baseUpper) = _baseRange(mid);
+        (limitLower, limitUpper) = _bidRange(mid);
     }
 
     /**
@@ -253,15 +254,27 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         uint256 balance1 = token1.balanceOf(address(this));
         emit Rebalance(mid, balance0, balance1, totalSupply());
 
-        // Update base range and deposit liquidity in Uniswap pool
-        (baseLower, baseUpper) = _baseRange();
+        // Update base range and deposit liquidity in Uniswap pool. Base range
+        // is symmetric so this order should use up all of one of the tokens.
+        (baseLower, baseUpper) = _baseRange(mid);
         uint128 baseLiquidity = _maxDepositable(baseLower, baseUpper);
         _mintLiquidity(baseLower, baseUpper, baseLiquidity, address(this));
 
-        // Update limit range and deposit liquidity in Uniswap pool
-        (limitLower, limitUpper) = _limitRange();
-        uint128 limitLiquidity = _maxDepositable(limitLower, limitUpper);
-        _mintLiquidity(limitLower, limitUpper, limitLiquidity, address(this));
+        // Calculate limit ranges
+        (int24 bidLower, int24 bidUpper) = _bidRange(mid);
+        (int24 askLower, int24 askUpper) = _askRange(mid);
+        uint128 bidLiquidity = _maxDepositable(bidLower, bidUpper);
+        uint128 askLiquidity = _maxDepositable(askLower, askUpper);
+
+        // After base order, should be left with just one token, so place a
+        // limit order to sell that token
+        if (bidLiquidity > askLiquidity) {
+            (limitLower, limitUpper) = (bidLower, bidUpper);
+            _mintLiquidity(bidLower, bidUpper, bidLiquidity, address(this));
+        } else {
+            (limitLower, limitUpper) = (askLower, askUpper);
+            _mintLiquidity(askLower, askUpper, askLiquidity, address(this));
+        }
 
         // Assert base and limit ranges aren't the same, otherwise positions
         // would get mixed up
@@ -364,26 +377,24 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     }
 
     /// @dev Return lower and upper ticks for the base order. This order is
-    /// roughly symmetric around the current price.
-    function _baseRange() internal view returns (int24, int24) {
-        int24 midFloor = _floor(_mid());
-        int24 midCeil = midFloor + tickSpacing;
-        return (midFloor - baseThreshold, midCeil + baseThreshold);
+    /// roughly symmetric around the mid price.
+    function _baseRange(int24 mid) internal view returns (int24, int24) {
+        int24 midFloor = _floor(mid);
+        return (midFloor - baseThreshold, midFloor + tickSpacing + baseThreshold);
     }
 
-    /// @dev Return lower and upper ticks for the limit order. This order helps
-    /// the vault rebalance closer to 50/50 and is either just above or just
-    /// below the current price, depending on which token the vault holds more
-    /// of.
-    function _limitRange() internal view returns (int24, int24) {
-        int24 midFloor = _floor(_mid());
-        int24 midCeil = midFloor + tickSpacing;
-        (int24 bidLower, int24 bidUpper) = (midFloor - limitThreshold, midFloor);
-        (int24 askLower, int24 askUpper) = (midCeil, midCeil + limitThreshold);
-        return
-            (_maxDepositable(bidLower, bidUpper) > _maxDepositable(askLower, askUpper))
-                ? (bidLower, bidUpper)
-                : (askLower, askUpper);
+    /// @dev Return lower and upper ticks for the bid limit order. This order
+    /// sits just below the mid price and helps rebalance closer to 50/50.
+    function _bidRange(int24 mid) internal view returns (int24, int24) {
+        int24 midFloor = _floor(mid);
+        return (midFloor - limitThreshold, midFloor);
+    }
+
+    /// @dev Return lower and upper ticks for the ask limit order. This order
+    /// sits just above the mid price and helps rebalance closer to 50/50.
+    function _askRange(int24 mid) internal view returns (int24, int24) {
+        int24 midCeil = _floor(mid) + tickSpacing;
+        return (midCeil, midCeil + limitThreshold);
     }
 
     /// @dev Callback for Uniswap V3 pool.
