@@ -38,7 +38,17 @@ def main():
     max_tick = 887272 // 60 * 60
     router.mint(pool, -max_tick, max_tick, 1e15, {"from": deployer})
 
-    vault = deployer.deploy(PassiveRebalanceVault, pool, 1800, 600, 100, 0, 600, 100e18)
+    vault = deployer.deploy(
+        PassiveRebalanceVault,
+        pool,
+        1800,
+        600,
+        100,
+        0,
+        600,
+        100e18,
+        publish_source=True,
+    )
 
     print(f"Vault address: {vault.address}")
     print(f"Router address: {router.address}")
