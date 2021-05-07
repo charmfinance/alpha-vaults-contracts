@@ -5,7 +5,7 @@ import time
 
 UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0")
 
-# rinkeby
+# Uniswap v3 factory on Rinkeby
 FACTORY = "0xAE28628c0fdFb5e54d60FEDC6C9085199aec14dF"
 
 
@@ -38,8 +38,7 @@ def main():
     max_tick = 887272 // 60 * 60
     router.mint(pool, -max_tick, max_tick, 1e15, {"from": deployer})
 
-    # Set short TWAP duration so that check in constructor passes
-    vault = deployer.deploy(PassiveRebalanceVault, pool, 1800, 600, 100, 1, 600, 100e18)
+    vault = deployer.deploy(PassiveRebalanceVault, pool, 1800, 600, 100, 0, 600, 100e18)
 
     print(f"Vault address: {vault.address}")
     print(f"Router address: {router.address}")

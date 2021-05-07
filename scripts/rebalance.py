@@ -3,7 +3,7 @@ from brownie.network.gas.strategies import GasNowScalingStrategy
 import os
 
 
-POOL = "0xD4B4568615CB365bcA926910ebc30EA2161067Cf"
+VAULT = "0xD4B4568615CB365bcA926910ebc30EA2161067Cf"
 
 
 def getAccount(account, pw):
@@ -21,8 +21,8 @@ def main():
 
     balance = keeper.balance()
 
-    pool = CubePool.at(POOL)
-    pool.updateAll({"from": keeper, "gas_price": gas_strategy})
+    vault = PassiveRebalanceVault.at(VAULT)
+    vault.rebalance({"from": keeper, "gas_price": gas_strategy})
 
     print(f"Gas used: {(balance - keeper.balance()) / 1e18:.4f} ETH")
     print(f"New balance: {keeper.balance() / 1e18:.4f} ETH")

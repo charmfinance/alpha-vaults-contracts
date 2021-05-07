@@ -24,7 +24,7 @@ def main():
         TWAP_DURATION,
         REBALANCE_COOLDOWN,
         MAX_TOTAL_SUPPLY,
-        publish_source=False
+        publish_source=False,
     )
 
     print(f"Gas used: {(balance - deployer.balance()) / 1e18:.4f} ETH")
