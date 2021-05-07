@@ -3,7 +3,7 @@ from brownie.network.gas.strategies import GasNowScalingStrategy
 import os
 
 
-VAULT = "0xD4B4568615CB365bcA926910ebc30EA2161067Cf"
+VAULT = "0xb52f322f7534d60807700bd8414d3c498d4cef52"
 
 
 def getAccount(account, pw):
