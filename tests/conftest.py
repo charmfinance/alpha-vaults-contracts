@@ -74,7 +74,7 @@ def tokens(MockToken, pool):
 @pytest.fixture
 def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
     vault = gov.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 23 * 60 * 60, 100e18
+        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 100e18
     )
 
     for u in users:
@@ -96,11 +96,8 @@ def vaultAfterPriceMove(vault, pool, router, gov):
     tick = pool.slot0()[1] // 60 * 60
     assert tick != prevTick
 
-    # Refresh vault
+    # Rebalance vault
     vault.rebalance({"from": gov})
-
-    # Fast-forward 24 hours to avoid cooldown
-    chain.sleep(24 * 60 * 60)
 
     yield vault
 
@@ -119,9 +116,6 @@ def vaultAfterPriceDown(vault, pool, router, gov):
     total0, total1 = vault.getTotalAmounts()
     assert total0 > 0
     assert total1 == 0
-
-    # Fast-forward 24 hours to avoid cooldown
-    chain.sleep(24 * 60 * 60)
 
     yield vault
 
@@ -142,9 +136,6 @@ def vaultAfterPriceUp(vault, pool, router, gov):
     total0, total1 = vault.getTotalAmounts()
     assert total0 == 0
     assert total1 > 0
-
-    # Fast-forward 24 hours to avoid cooldown
-    chain.sleep(24 * 60 * 60)
 
     yield vault
 

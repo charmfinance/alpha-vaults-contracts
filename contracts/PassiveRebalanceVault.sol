@@ -64,7 +64,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     int24 public limitThreshold;
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
-    uint256 public rebalanceCooldown;
     uint256 public maxTotalSupply;
 
     int24 public baseLower;
@@ -76,7 +75,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     address public pendingGovernance;
     bool public finalized;
     address public keeper;
-    uint256 public lastUpdate;
 
     /**
      * @param _pool Underlying Uniswap V3 pool
@@ -84,7 +82,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      * @param _limitThreshold Used to determine limit range
      * @param _maxTwapDeviation Max deviation from TWAP during rebalance
      * @param _twapDuration TWAP duration in seconds for rebalance check
-     * @param _rebalanceCooldown Min time between rebalance() calls in seconds
      * @param _maxTotalSupply Pause deposits if total supply exceeds this
      */
     constructor(
@@ -93,7 +90,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         int24 _limitThreshold,
         int24 _maxTwapDeviation,
         uint32 _twapDuration,
-        uint256 _rebalanceCooldown,
         uint256 _maxTotalSupply
     ) ERC20("Alpha Vault", "AV") {
         pool = IUniswapV3Pool(_pool);
@@ -106,16 +102,15 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         limitThreshold = _limitThreshold;
         maxTwapDeviation = _maxTwapDeviation;
         twapDuration = _twapDuration;
-        rebalanceCooldown = _rebalanceCooldown;
         maxTotalSupply = _maxTotalSupply;
         governance = msg.sender;
 
-        int24 mid = _mid();
-        _checkMid(mid);
         _checkThreshold(_baseThreshold);
         _checkThreshold(_limitThreshold);
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
 
+        int24 mid = _mid();
+        _checkMid(mid);
         (baseLower, baseUpper) = _baseRange(mid);
         (limitLower, limitUpper) = _bidRange(mid);
     }
@@ -231,14 +226,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /**
      * @notice Update vault's positions depending on how the price has moved.
-     * Reverts if cooldown period after last rebalance hasn't elapsed, or if
-     * current price deviates too much from the TWAP, or if current price is
-     * too close to boundary.
+     * Reverts if current price deviates too much from the TWAP, or if it's too
+     * extreme.
      */
     function rebalance() external override nonReentrant {
         require(keeper == address(0) || msg.sender == keeper, "keeper");
-        require(block.timestamp >= lastUpdate.add(rebalanceCooldown), "cooldown");
-        lastUpdate = block.timestamp;
 
         int24 mid = _mid();
         _checkMid(mid);
@@ -567,10 +559,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
         twapDuration = _twapDuration;
-    }
-
-    function setRebalanceCooldown(uint256 _rebalanceCooldown) external onlyGovernance {
-        rebalanceCooldown = _rebalanceCooldown;
     }
 
     function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {

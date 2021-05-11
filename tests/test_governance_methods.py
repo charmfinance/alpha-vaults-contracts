@@ -37,11 +37,6 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.twapDuration() == 800
 
     with reverts("governance"):
-        vault.setRebalanceCooldown(12 * 60 * 60, {"from": user})
-    vault.setRebalanceCooldown(12 * 60 * 60, {"from": gov})
-    assert vault.rebalanceCooldown() == 12 * 60 * 60
-
-    with reverts("governance"):
         vault.setMaxTotalSupply(0, {"from": user})
     vault.setMaxTotalSupply(0, {"from": gov})
     assert vault.maxTotalSupply() == 0

@@ -232,9 +232,6 @@ def test_withdraw(
 ):
     vault = vaultAfterPriceMove
 
-    # Fast-forward 24 hours to avoid cooldown
-    chain.sleep(24 * 60 * 60)
-
     # Deposit and rebalance
     shares = 1e8
     tx = vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})

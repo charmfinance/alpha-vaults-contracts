@@ -9,9 +9,6 @@ def test_rebalance_when_empty_then_mint(
     vault, pool, tokens, getPositions, gov, user, recipient
 ):
 
-    # Fast-forward 24 hours to avoid cooldown
-    chain.sleep(24 * 60 * 60)
-
     # Rebalance
     vault.rebalance({"from": gov})
 
@@ -107,17 +104,4 @@ def test_rebalance_twap_check(
     chain.sleep(610)
     router.swap(pool, buy, 1e8, {"from": gov})
 
-    vault.rebalance({"from": gov})
-
-
-def test_rebalance_cooldown(vault, gov):
-    vault.rebalance({"from": gov})
-
-    # After 22 hours, cannot rebalance yet
-    chain.sleep(22 * 60 * 60)
-    with reverts("cooldown"):
-        vault.rebalance({"from": gov})
-
-    # After another 2 hours, rebalance works
-    chain.sleep(2 * 60 * 60)
     vault.rebalance({"from": gov})
