@@ -79,8 +79,8 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     assert amount1Deposit >= amount1Withdraw
 
     # Check amounts are roughly equal
-    assert approx(amount0Deposit, abs=3) == amount0Withdraw
-    assert approx(amount1Deposit, abs=3) == amount1Withdraw
+    assert approx(amount0Deposit, abs=100) == amount0Withdraw
+    assert approx(amount1Deposit, abs=100) == amount1Withdraw
 
 
 @given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
