@@ -53,8 +53,6 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
-    uint256 public constant DUST_THRESHOLD = 1000;
-
     int24 public baseThreshold;
     int24 public limitThreshold;
     int24 public maxTwapDeviation;
@@ -200,8 +198,8 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
             collect(limitLower, limitUpper, limit0, limit1, to);
 
             // Transfer out tokens proportional to unused balances
-            uint256 unused0 = _withdrawUnused(token0, shares, to);
-            uint256 unused1 = _withdrawUnused(token1, shares, to);
+            uint256 unused0 = _withdrawTokens(token0, shares, to);
+            uint256 unused1 = _withdrawTokens(token1, shares, to);
 
             // Sum up total amounts sent to recipient
             amount0 = base0.add(limit0).add(unused0);
@@ -268,18 +266,15 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
     }
 
     /// @dev If vault holds enough unused token balance, transfer proportional
-    /// amount to sender. In general, the unused balance should be very low, so
-    /// this transfer wouldn't be triggered.
-    function _withdrawUnused(
+    /// amount to sender.
+    function _withdrawTokens(
         IERC20 token,
         uint256 shares,
         address to
     ) internal returns (uint256 amount) {
         uint256 balance = token.balanceOf(address(this));
-        if (balance >= DUST_THRESHOLD) {
-            amount = balance.mul(shares).div(totalSupply());
-            token.safeTransfer(to, amount);
-        }
+        amount = balance.mul(shares).div(totalSupply());
+        if (amount > 0) token.safeTransfer(to, amount);
     }
 
     /// @dev Convert shares into amount of liquidity. Shouldn't be called
