@@ -87,8 +87,8 @@ def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
 @pytest.fixture
 def vaultAfterPriceMove(vault, pool, router, gov):
 
-    # Mint and move price to simulate existing activity
-    vault.deposit(8e18, 1 << 255, 1 << 255, gov, {"from": gov})
+    # Deposit and move price to simulate existing activity
+    vault.deposit(1e16, 1e18, 0, 0, gov, {"from": gov})
     prevTick = pool.slot0()[1] // 60 * 60
     router.swap(pool, True, 1e16, {"from": gov})
 
@@ -99,18 +99,24 @@ def vaultAfterPriceMove(vault, pool, router, gov):
     # Rebalance vault
     vault.rebalance({"from": gov})
 
+    # Check vault holds both tokens
+    total0, total1 = vault.getTotalAmounts()
+    assert total0 > 0 and total1 > 0
+
     yield vault
 
 
 @pytest.fixture
-def vaultAfterPriceDown(vault, pool, router, gov):
+def vaultOnlyWithToken0(vault, pool, router, gov):
 
-    # Mint and move price to simulate existing activity
-    vault.deposit(8e18, 1 << 255, 1 << 255, gov, {"from": gov})
-    router.swap(pool, True, 1e18, {"from": gov})  # True means swap token0 -> token1
+    # Deposit
+    vault.deposit(1e14, 1e16, 0, 0, gov, {"from": gov})
 
     # Refresh vault
     vault.rebalance({"from": gov})
+
+    # Swap token0 -> token1
+    router.swap(pool, True, 1e16, {"from": gov})
 
     # Check vault holds only token0
     total0, total1 = vault.getTotalAmounts()
@@ -121,16 +127,16 @@ def vaultAfterPriceDown(vault, pool, router, gov):
 
 
 @pytest.fixture
-def vaultAfterPriceUp(vault, pool, router, gov):
+def vaultOnlyWithToken1(vault, pool, router, gov):
 
-    # Mint and move price to simulate existing activity
-    vault.deposit(8e18, 1 << 255, 1 << 255, gov, {"from": gov})
-    router.swap(pool, False, 1e20, {"from": gov})  # False means swap token1 -> token0
-
-    tick = pool.slot0()[1] // 60 * 60
+    # Deposit
+    vault.deposit(1e14, 1e16, 0, 0, gov, {"from": gov})
 
     # Refresh vault
     vault.rebalance({"from": gov})
+
+    # Swap token1 -> token0
+    router.swap(pool, False, 1e18, {"from": gov})
 
     # Check vault holds only token0
     total0, total1 = vault.getTotalAmounts()

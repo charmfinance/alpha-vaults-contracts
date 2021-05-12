@@ -5,27 +5,13 @@ from pytest import approx
 from conftest import computePositionKey
 
 
-def test_rebalance_when_empty_then_mint(
-    vault, pool, tokens, getPositions, gov, user, recipient
-):
-
-    # Rebalance
-    vault.rebalance({"from": gov})
-
-    vault.deposit(1e7, 1 << 255, 1 << 255, user, {"from": user})
-
-    # Check liquidity in pool
-    base, rebalance = getPositions(vault)
-    assert base[0] > 0
-    assert rebalance[0] == 0
-
-
 @pytest.mark.parametrize("buy", [False, True])
 @pytest.mark.parametrize("big", [False, True])
 def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, big):
 
     # Mint some liquidity
-    vault.deposit(1e18, 1 << 255, 1 << 255, user, {"from": user})
+    vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
+    vault.rebalance({"from": gov})
 
     # Do a swap to move the price
     qty = 1e16 * [100, 1][buy] * [1, 100][big]
@@ -90,7 +76,7 @@ def test_rebalance_twap_check(
     vault.setMaxTwapDeviation(500, {"from": gov})
 
     # Mint some liquidity
-    vault.deposit(1e18, 1 << 255, 1 << 255, user, {"from": user})
+    vault.deposit(1e8, 1e10, 0, 0, user, {"from": user})
 
     # Do a swap to move the price a lot
     qty = 1e16 * 100 * [100, 1][buy]

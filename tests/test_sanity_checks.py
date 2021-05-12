@@ -3,10 +3,10 @@ from pytest import approx
 
 
 @pytest.mark.parametrize(
-    "shares",
-    [1e4, 1e18],
+    "amount0Desired,amount1Desired",
+    [[1e4, 1e18], [1e18, 1e18]],
 )
-def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, shares):
+def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, amount0Desired, amount1Desired):
     vault = vaultAfterPriceMove
 
     # Store balances and total amounts
@@ -15,8 +15,8 @@ def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, shares):
     total0, total1 = vault.getTotalAmounts()
 
     # Mint some liquidity
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
-    amount0, amount1 = tx.return_value
+    tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, recipient, {"from": user})
+    _, amount0, amount1 = tx.return_value
 
     # Check amounts match total amounts
     assert approx(amount0, abs=1) == vault.getTotalAmounts()[0] - total0
@@ -24,11 +24,11 @@ def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, shares):
 
 
 @pytest.mark.parametrize(
-    "shares",
-    [1e4, 1e18],
+    "amount0Desired,amount1Desired",
+    [[1e4, 1e18], [1e18, 1e18]],
 )
 def test_total_amounts_per_share_do_not_decrease(
-    vaultAfterPriceMove, tokens, user, recipient, shares
+    vaultAfterPriceMove, tokens, user, recipient, amount0Desired, amount1Desired
 ):
     vault = vaultAfterPriceMove
 
@@ -39,7 +39,7 @@ def test_total_amounts_per_share_do_not_decrease(
     valuePerShare1 = total1 / supply
 
     # Mint some liquidity
-    vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
+    vault.deposit(amount0Desired, amount1Desired, 0, 0, recipient, {"from": user})
 
     # Check amounts match total amounts
     total0, total1 = vault.getTotalAmounts()
@@ -59,7 +59,7 @@ def test_total_amounts_do_not_change_after_rebalance(
 ):
 
     # Mint some liquidity
-    vault.deposit(1e18, 1 << 255, 1 << 255, gov, {"from": gov})
+    vault.deposit(1e8, 1e10, 0, 0, gov, {"from": gov})
 
     # Do a swap to move the price
     qty = 1e16 * [100, 1][buy] * [1, 100][big]
@@ -71,11 +71,5 @@ def test_total_amounts_do_not_change_after_rebalance(
 
     # Check total amounts haven't changed - they should only increase a bit due to fees earned
     newTotal0, newTotal1 = vault.getTotalAmounts()
-    if buy:
-        assert approx(total1) == newTotal1
-        assert approx(total0, rel=1e-2) == newTotal0
-        assert total0 < newTotal0
-    else:
-        assert approx(total0) == newTotal0
-        assert approx(total1, rel=1e-2) == newTotal1
-        assert total1 < newTotal1
+    assert approx(total0, abs=2) == newTotal0
+    assert approx(total1, abs=2) == newTotal1

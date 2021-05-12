@@ -2,6 +2,7 @@
 
 pragma solidity 0.7.6;
 
+import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -51,7 +52,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
-    uint256 public constant MIN_TOTAL_SUPPLY = 1000;
     uint256 public constant DUST_THRESHOLD = 1000;
 
     IUniswapV3Pool public pool;
@@ -117,65 +117,55 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /**
      * @notice Deposit tokens in proportion to the vault's holdings.
-     * @param shares Shares minted to recipient
-     * @param amount0Max Revert if resulting amount0 is larger than this
-     * @param amount1Max Revert if resulting amount1 is larger than this
+     * @param amount0Desired Max amount of token 0 deposited
+     * @param amount1Desired Max amount of token 1 deposited
+     * @param amount0Min Revert if resulting `amount0` is less than this
+     * @param amount1Min Revert if resulting `amount1` is less than this
      * @param to Recipient of shares
-     * @return amount0 Amount of token0 paid by sender
-     * @return amount1 Amount of token1 paid by sender
+     * @return shares Number of shares minted
+     * @return amount0 Amount of token0 deposited
+     * @return amount1 Amount of token1 deposited
      */
     function deposit(
-        uint256 shares,
-        uint256 amount0Max,
-        uint256 amount1Max,
+        uint256 amount0Desired,
+        uint256 amount1Desired,
+        uint256 amount0Min,
+        uint256 amount1Min,
         address to
-    ) external override nonReentrant returns (uint256 amount0, uint256 amount1) {
-        require(shares > 0, "shares");
+    ) external override nonReentrant returns (uint256 shares, uint256 amount0, uint256 amount1) {
+        require(amount0Desired > 0 || amount1Desired > 0, "amounts both zero");
         require(to != address(0), "to");
 
-        if (totalSupply() == 0) {
-            // For the initial deposit, place just the base order and ignore
-            // the limit order
-            (amount0, amount1) = _mintLiquidity(
-                baseLower,
-                baseUpper,
-                _uint128Safe(shares),
-                msg.sender
-            );
-
-            // Lock small number of shares and mint rest to recipient
-            require(shares > MIN_TOTAL_SUPPLY, "MIN_TOTAL_SUPPLY");
-            _mint(address(this), MIN_TOTAL_SUPPLY);
-            shares = shares.sub(MIN_TOTAL_SUPPLY);
+        uint256 _totalSupply = totalSupply();
+        if (_totalSupply == 0) {
+            amount0 = amount0Desired;
+            amount1 = amount1Desired;
+            shares = Math.max(amount0, amount1);
         } else {
-            // Calculate how much liquidity to deposit
-            uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
-            uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
+            (uint256 total0, uint256 total1) = getTotalAmounts();
+            total0 = Math.max(total0, 1);
+            total1 = Math.max(total1, 1);
 
-            // Deposit liquidity into Uniswap pool
-            (uint256 base0, uint256 base1) =
-                _mintLiquidity(baseLower, baseUpper, baseLiquidity, msg.sender);
-            (uint256 limit0, uint256 limit1) =
-                _mintLiquidity(limitLower, limitUpper, limitLiquidity, msg.sender);
+            uint256 cross = Math.min(amount0Desired.mul(total1), amount1Desired.mul(total0));
+            amount0 = cross.div(total1).add(1); // round up
+            amount1 = cross.div(total0).add(1); // round up
+            amount0 = Math.min(amount0, amount0Desired);
+            amount1 = Math.min(amount1, amount1Desired);
 
-            // Transfer in tokens proportional to unused balances
-            uint256 unused0 = _depositUnused(token0, shares);
-            uint256 unused1 = _depositUnused(token1, shares);
-
-            // Sum up total amounts paid by sender
-            amount0 = base0.add(limit0).add(unused0);
-            amount1 = base1.add(limit1).add(unused1);
+            shares = cross.mul(_totalSupply).div(total0).div(total1);
         }
+
+        require(shares > 0, "shares zero");
+        require(amount0 >= amount0Min, "amount0Min");
+        require(amount1 >= amount1Min, "amount1Min");
+        require(_totalSupply.add(shares) <= maxTotalSupply, "maxTotalSupply");
 
         // Mint shares to recipient
         _mint(to, shares);
-
-        require(amount0 <= amount0Max, "amount0Max");
-        require(amount1 <= amount1Max, "amount1Max");
         emit Deposit(msg.sender, to, shares, amount0, amount1);
 
-        // Check total supply cap not exceeded. A value of 0 means no limit.
-        require(maxTotalSupply == 0 || totalSupply() <= maxTotalSupply, "maxTotalSupply");
+        if (amount0 > 0) token0.safeTransferFrom(msg.sender, address(this), amount0);
+        if (amount1 > 0) token1.safeTransferFrom(msg.sender, address(this), amount1);
     }
 
     /**
@@ -411,7 +401,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      * @notice Calculate total holdings of token0 and token1, or how much of
      * each token this vault would hold if it withdrew all its liquidity.
      */
-    function getTotalAmounts() external view override returns (uint256 total0, uint256 total1) {
+    function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
         (, uint256 base0, uint256 base1) = getBasePosition();
         (, uint256 limit0, uint256 limit1) = getLimitPosition();
         total0 = token0.balanceOf(address(this)).add(base0).add(limit0);

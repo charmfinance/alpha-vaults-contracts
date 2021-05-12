@@ -4,17 +4,16 @@ from pytest import approx
 
 
 @pytest.mark.parametrize(
-    "shares",
-    [1e4, 1e18],
+    "amount0Desired,amount1Desired",
+    [[0, 1], [1, 0], [1e18, 0], [0, 1e18], [1e4, 1e18], [1e18, 1e18]],
 )
-def test_deposit_initial(
+def test_initial_deposit(
     vault,
-    pool,
     tokens,
-    gov,
     user,
     recipient,
-    shares,
+    amount0Desired,
+    amount1Desired,
 ):
 
     # Store balances
@@ -22,74 +21,19 @@ def test_deposit_initial(
     balance1 = tokens[1].balanceOf(user)
 
     # Deposit
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
-    amount0, amount1 = tx.return_value
+    tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, recipient, {"from": user})
+    shares, amount0, amount1 = tx.return_value
 
-    # Check return values
-    assert approx(shares - 1000) == vault.balanceOf(recipient) > 0
-    assert amount0 == balance0 - tokens[0].balanceOf(user)
-    assert amount1 == balance1 - tokens[1].balanceOf(user)
+    # Check amounts are same as inputs
+    assert amount0 == amount0Desired
+    assert amount1 == amount1Desired
 
-    # Check event
-    assert tx.events["Deposit"] == {
-        "sender": user,
-        "to": recipient,
-        "shares": shares - 1000,
-        "amount0": amount0,
-        "amount1": amount1,
-    }
-
-
-def test_deposit_initial_checks(vault, user, recipient):
-    with reverts("shares"):
-        vault.deposit(0, 1e8, 1e8, recipient, {"from": user})
-    with reverts("MIN_TOTAL_SUPPLY"):
-        vault.deposit(1, 1e8, 1e8, recipient, {"from": user})
-    with reverts("to"):
-        vault.deposit(1e8, 1 << 255, 1 << 255, ZERO_ADDRESS, {"from": user})
-    with reverts("amount0Max"):
-        vault.deposit(1e8, 0, 1 << 255, recipient, {"from": user})
-    with reverts("amount1Max"):
-        vault.deposit(1e8, 1 << 255, 0, recipient, {"from": user})
-
-
-@pytest.mark.parametrize(
-    "shares",
-    [1e4, 1e18],
-)
-def test_deposit_existing(
-    vaultAfterPriceMove,
-    pool,
-    tokens,
-    getPositions,
-    router,
-    gov,
-    user,
-    recipient,
-    shares,
-):
-    vault = vaultAfterPriceMove
-
-    # Store balances, supply and positions
-    balance0 = tokens[0].balanceOf(user)
-    balance1 = tokens[1].balanceOf(user)
-    totalSupply = vault.totalSupply()
-    base0, limit0 = getPositions(vault)
-
-    # Deposit
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
-    amount0, amount1 = tx.return_value
-
-    # Check return values
+    # Check received right number of shares
     assert shares == vault.balanceOf(recipient) > 0
+
+    # Check paid right amount of tokens
     assert amount0 == balance0 - tokens[0].balanceOf(user)
     assert amount1 == balance1 - tokens[1].balanceOf(user)
-
-    # Check liquidity and balances are in proportion
-    base1, limit1 = getPositions(vault)
-    ratio = (totalSupply + shares) / totalSupply
-    assert approx(base1[0] / base0[0]) == ratio
-    assert approx(limit1[0] / limit0[0]) == ratio
 
     # Check event
     assert tx.events["Deposit"] == {
@@ -102,11 +46,66 @@ def test_deposit_existing(
 
 
 @pytest.mark.parametrize(
-    "shares",
-    [1e4, 1e18],
+    "amount0Desired,amount1Desired",
+    [[1, 1e18], [1e18, 1], [1e4, 1e18], [1e18, 1e18]],
 )
-def test_deposit_existing_when_price_up(
-    vaultAfterPriceUp,
+def test_deposit(
+    vaultAfterPriceMove,
+    tokens,
+    getPositions,
+    user,
+    recipient,
+    amount0Desired,
+    amount1Desired,
+):
+    vault = vaultAfterPriceMove
+
+    # Store balances, supply and positions
+    balance0 = tokens[0].balanceOf(user)
+    balance1 = tokens[1].balanceOf(user)
+    totalSupply = vault.totalSupply()
+    total0, total1 = vault.getTotalAmounts()
+
+    # Deposit
+    tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, recipient, {"from": user})
+    shares, amount0, amount1 = tx.return_value
+
+    # Check amounts don't exceed desired
+    assert amount0 <= amount0Desired
+    assert amount1 <= amount1Desired
+
+    # Check received right number of shares
+    assert shares == vault.balanceOf(recipient) > 0
+
+    # Check paid right amount of tokens
+    assert amount0 == balance0 - tokens[0].balanceOf(user)
+    assert amount1 == balance1 - tokens[1].balanceOf(user)
+
+    # Check one amount is tight
+    assert approx(amount0) == amount0Desired or approx(amount1) == amount1Desired
+
+    # Check total amounts are in proportion
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total0 * total1After) == total1 * total0After
+    assert approx(total0 * (totalSupply + shares)) == total0After * totalSupply
+    assert approx(total1 * (totalSupply + shares)) == total1After * totalSupply
+
+    # Check event
+    assert tx.events["Deposit"] == {
+        "sender": user,
+        "to": recipient,
+        "shares": shares,
+        "amount0": amount0,
+        "amount1": amount1,
+    }
+
+
+@pytest.mark.parametrize(
+    "amount0Desired,amount1Desired",
+    [[1e4, 1e18], [1e18, 1e18]],
+)
+def test_deposit_when_vault_only_has_token0(
+    vaultOnlyWithToken0,
     pool,
     tokens,
     getPositions,
@@ -114,38 +113,50 @@ def test_deposit_existing_when_price_up(
     gov,
     user,
     recipient,
-    shares,
+    amount0Desired,
+    amount1Desired,
 ):
-    vault = vaultAfterPriceUp
+    vault = vaultOnlyWithToken0
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
     totalSupply = vault.totalSupply()
-    base0, limit0 = getPositions(vault)
+    total0, total1 = vault.getTotalAmounts()
 
     # Deposit
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
-    amount0, amount1 = tx.return_value
+    tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, recipient, {"from": user})
+    shares, amount0, amount1 = tx.return_value
 
-    # Check return values
+    # Check amounts don't exceed desired
+    assert amount0 <= amount0Desired
+    assert amount1 <= amount1Desired
+
+    # Check received right number of shares
     assert shares == vault.balanceOf(recipient) > 0
-    assert amount0 == balance0 - tokens[0].balanceOf(user) == 0
-    assert amount1 == balance1 - tokens[1].balanceOf(user) > 0
 
-    # Check liquidity and balances are in proportion
-    base1, limit1 = getPositions(vault)
-    ratio = (totalSupply + shares) / totalSupply
-    assert base0[0] == base1[0] == 0
-    assert approx(limit1[0] / limit0[0], rel=1e-5) == ratio
+    # Check paid right amount of tokens
+    assert amount0 == balance0 - tokens[0].balanceOf(user)
+    assert amount1 == balance1 - tokens[1].balanceOf(user)
+
+    # Check paid mainly token0
+    assert amount0 > 0
+    assert approx(amount1 / amount0, abs=1e-3) == 0
+
+    # Check amount is tight
+    assert approx(amount0) == amount0Desired
+
+    # Check total amounts are in proportion
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total0 * (totalSupply + shares)) == total0After * totalSupply
 
 
 @pytest.mark.parametrize(
-    "shares",
-    [1e4, 1e18],
+    "amount0Desired,amount1Desired",
+    [[1e4, 1e18], [1e18, 1e18]],
 )
-def test_deposit_existing_when_price_down(
-    vaultAfterPriceDown,
+def test_deposit_when_vault_only_has_token1(
+    vaultOnlyWithToken1,
     pool,
     tokens,
     getPositions,
@@ -153,78 +164,57 @@ def test_deposit_existing_when_price_down(
     gov,
     user,
     recipient,
-    shares,
+    amount0Desired,
+    amount1Desired,
 ):
-    vault = vaultAfterPriceDown
+    vault = vaultOnlyWithToken1
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
     totalSupply = vault.totalSupply()
-    base0, limit0 = getPositions(vault)
+    total0, total1 = vault.getTotalAmounts()
 
     # Deposit
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
-    amount0, amount1 = tx.return_value
+    tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, recipient, {"from": user})
+    shares, amount0, amount1 = tx.return_value
 
-    # Check return values
+    # Check amounts don't exceed desired
+    assert amount0 <= amount0Desired
+    assert amount1 <= amount1Desired
+
+    # Check received right number of shares
     assert shares == vault.balanceOf(recipient) > 0
-    assert amount0 == balance0 - tokens[0].balanceOf(user) > 0
-    assert amount1 == balance1 - tokens[1].balanceOf(user) == 0
 
-    # Check liquidity and balances are in proportion
-    base1, limit1 = getPositions(vault)
-    ratio = (totalSupply + shares) / totalSupply
-    assert base0[0] == base1[0] == 0
-    assert approx(limit1[0] / limit0[0], rel=1e-5) == ratio
+    # Check paid right amount of tokens
+    assert amount0 == balance0 - tokens[0].balanceOf(user)
+    assert amount1 == balance1 - tokens[1].balanceOf(user)
 
+    # Check paid mainly token1
+    assert amount1 > 0
+    assert approx(amount0 / amount1, abs=1e-3) == 0
 
-@pytest.mark.parametrize(
-    "shares",
-    [1e12, 1e18, 1e19],
-)
-def test_unused_deposit(vault, gov, user, recipient, tokens, shares):
+    # Check amount is tight
+    assert approx(amount1) == amount1Desired
 
-    # Initial deposit
-    vault.deposit(1e18, 1 << 255, 1 << 255, recipient, {"from": user})
-
-    # Deposit and withdraw and record expected amounts
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
-    vault.withdraw(shares, 0, 0, user, {"from": user})
-    exp0, exp1 = tx.return_value
-
-    # Store balances
-    balance0 = tokens[0].balanceOf(user)
-    balance1 = tokens[1].balanceOf(user)
-
-    # Give vault excess tokens
-    tokens[0].transfer(vault, 1e8, {"from": gov})
-    tokens[1].transfer(vault, 1e10, {"from": gov})
-
-    # Deposit
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, recipient, {"from": user})
-    amount0, amount1 = tx.return_value
-
-    # Check unused amounts were also deposited
-    assert approx(amount0) == exp0 + 1e8 * shares / 1e18
-    assert approx(amount1) == exp1 + 1e10 * shares / 1e18
-
-    # Check balances match amounts
-    assert amount0 == balance0 - tokens[0].balanceOf(user) > 0
-    assert amount1 == balance1 - tokens[1].balanceOf(user) > 0
+    # Check total amounts are in proportion
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total1 * (totalSupply + shares)) == total1After * totalSupply
 
 
-def test_deposit_existing_checks(vaultAfterPriceMove, user, recipient):
-    with reverts("shares"):
-        vaultAfterPriceMove.deposit(0, 1 << 255, 1 << 255, recipient, {"from": user})
-    with reverts("amount0Max"):
-        vaultAfterPriceMove.deposit(1e8, 0, 1 << 255, recipient, {"from": user})
-    with reverts("amount1Max"):
-        vaultAfterPriceMove.deposit(1e8, 1 << 255, 0, recipient, {"from": user})
+def test_deposit_checks(vault, user):
+    with reverts("amounts both zero"):
+        vault.deposit(0, 0, 0, 0, user, {"from": user})
     with reverts("to"):
-        vaultAfterPriceMove.deposit(
-            1e8, 1 << 255, 1 << 255, ZERO_ADDRESS, {"from": user}
-        )
+        vault.deposit(1e8, 1e8, 0, 0, ZERO_ADDRESS, {"from": user})
+
+    with reverts("amount0Min"):
+        vault.deposit(1e8, 0, 2e8, 0, user, {"from": user})
+    with reverts("amount1Min"):
+        vault.deposit(0, 1e8, 0, 2e8, user, {"from": user})
+
+    with reverts("maxTotalSupply"):
+        vault.deposit(1e8, 200e18, 0, 0, user, {"from": user})
 
 
 def test_withdraw(
@@ -233,29 +223,38 @@ def test_withdraw(
     vault = vaultAfterPriceMove
 
     # Deposit and rebalance
-    shares = 1e8
-    tx = vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
+    tx = vault.deposit(1e8, 1e10, 0, 0, user, {"from": user})
+    shares, _, _ = tx.return_value
     vault.rebalance({"from": gov})
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(recipient)
     balance1 = tokens[1].balanceOf(recipient)
     totalSupply = vault.totalSupply()
-    base0, limit0 = getPositions(vault)
+    total0, total1 = vault.getTotalAmounts()
+    basePos, limitPos = getPositions(vault)
 
-    # Withdraw
+    # Withdraw all shares
     tx = vault.withdraw(shares, 0, 0, recipient, {"from": user})
     amount0, amount1 = tx.return_value
+
+    # Check doesn't hold any shares now
     assert vault.balanceOf(user) == 0
 
-    # Check liquidity in pool
-    base1, limit1 = getPositions(vault)
-    assert approx((totalSupply - shares) / totalSupply) == base1[0] / base0[0]
-    assert approx((totalSupply - shares) / totalSupply) == limit1[0] / limit0[0]
-
-    # Check recipient has received tokens
+    # Check received right amount of tokens
     assert tokens[0].balanceOf(recipient) - balance0 == amount0 > 0
     assert tokens[1].balanceOf(recipient) - balance1 == amount1 > 0
+
+    # Check total amounts are in proportion
+    ratio = (totalSupply - shares) / totalSupply
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total0After / total0) == ratio
+    assert approx(total1After / total1) == ratio
+
+    # Check liquidity in pool decreases proportionally
+    basePosAfter, limitPosAfter = getPositions(vault)
+    assert approx(basePosAfter[0] / basePos[0]) == ratio
+    assert approx(limitPosAfter[0] / limitPos[0]) == ratio
 
     # Check event
     assert tx.events["Withdraw"] == {
@@ -267,50 +266,17 @@ def test_withdraw(
     }
 
 
-@pytest.mark.parametrize(
-    "shares",
-    [1e6, 1e12, 1e17],
-)
-def test_unused_withdraw(vault, gov, user, recipient, tokens, shares):
-
-    # Initial deposit
-    vault.deposit(1e18, 1 << 255, 1 << 255, user, {"from": user})
-
-    # Deposit and withdraw and record expected amounts
-    vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
-    tx = vault.withdraw(shares, 0, 0, user, {"from": user})
-    exp0, exp1 = tx.return_value
-
-    # Store balances, supply and positions
-    balance0 = tokens[0].balanceOf(recipient)
-    balance1 = tokens[1].balanceOf(recipient)
-
-    # Vault somehow has excess unused tokens
-    tokens[0].transfer(vault, 1e8, {"from": gov})
-    tokens[1].transfer(vault, 1e10, {"from": gov})
-
-    # Withdraw
-    tx = vault.withdraw(shares, 0, 0, recipient, {"from": user})
-    amount0, amount1 = tx.return_value
-
-    # Check half of unused tokens were also withdrawn
-    assert approx(amount0) == exp0 + 1e8 * shares / 1e18
-    assert approx(amount1) == exp1 + 1e10 * shares / 1e18
-
-    # Check balances match amounts
-    assert amount0 == tokens[0].balanceOf(recipient) - balance0 > 0
-    assert amount1 == tokens[1].balanceOf(recipient) - balance1 > 0
-
-
 def test_withdraw_checks(vault, user, recipient):
-    shares = 1e8
-    vault.deposit(shares, 1 << 255, 1 << 255, user, {"from": user})
+    tx = vault.deposit(1e8, 1e10, 0, 0, user, {"from": user})
+    shares, _, _ = tx.return_value
 
     with reverts("shares"):
         vault.withdraw(0, 0, 0, recipient, {"from": user})
     with reverts("to"):
         vault.withdraw(shares - 1000, 0, 0, ZERO_ADDRESS, {"from": user})
+
     with reverts("amount0Min"):
         vault.withdraw(shares - 1000, 1e18, 0, recipient, {"from": user})
     with reverts("amount1Min"):
         vault.withdraw(shares - 1000, 0, 1e18, recipient, {"from": user})
+

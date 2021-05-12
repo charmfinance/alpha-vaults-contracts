@@ -37,9 +37,9 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.twapDuration() == 800
 
     with reverts("governance"):
-        vault.setMaxTotalSupply(0, {"from": user})
-    vault.setMaxTotalSupply(0, {"from": gov})
-    assert vault.maxTotalSupply() == 0
+        vault.setMaxTotalSupply(1 << 255, {"from": user})
+    vault.setMaxTotalSupply(1 << 255, {"from": gov})
+    assert vault.maxTotalSupply() == 1 << 255
 
     tokens[0].transfer(vault, 1e18, {"from": gov})
     with reverts("governance"):
@@ -48,7 +48,9 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     vault.emergencyWithdraw(tokens[0], 1e18, {"from": gov})
     assert tokens[0].balanceOf(gov) == balance + 1e18
 
-    vault.deposit(1e8, 1 << 255, 1 << 255, gov, {"from": gov})
+    vault.deposit(1e8, 1e10, 0, 0, gov, {"from": gov})
+    vault.rebalance({"from": gov})
+
     with reverts("governance"):
         vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e4, {"from": user})
     balance0 = tokens[0].balanceOf(gov)

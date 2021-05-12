@@ -7,8 +7,9 @@ interface IVault {
         uint256,
         uint256,
         uint256,
+        uint256,
         address
-    ) external returns (uint256, uint256);
+    ) external returns (uint256, uint256, uint256);
 
     function withdraw(
         uint256,

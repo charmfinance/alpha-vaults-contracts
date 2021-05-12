@@ -28,21 +28,24 @@ MAX_EXAMPLES = 5
 #     print("Balance1", tokens[1].balanceOf(user) - balance1)
 
 
-@given(shares=strategy("uint256", min_value=1e8, max_value=1e20))
+@given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
+@given(amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18))
 @given(buy=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e20))
+@given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_rebalance_uses_up_all_balances(
-    vault, pool, router, gov, user, shares, tokens, buy, qty
+    vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
 
     # Deposit, move price and rebalance to simulate existing activity
-    vault.deposit(shares, 1 << 255, 1 << 255, gov, {"from": gov})
-    router.swap(pool, buy, qty, {"from": gov})
+    vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
+    vault.rebalance({"from": user})
+
+    router.swap(pool, buy, qty, {"from": user})
     vault.setMaxTwapDeviation(1 << 22, {"from": gov})  # ignore twap deviation
 
     vault.rebalance({"from": user})
 
     # Check balances is roughly zero
-    assert tokens[0].balanceOf(vault) < 1000
-    assert tokens[1].balanceOf(vault) < 1000
+    assert tokens[0].balanceOf(vault) < 10000
+    assert tokens[1].balanceOf(vault) < 10000
