@@ -98,8 +98,6 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
 
         int24 mid = getTick();
         _checkMid(mid);
-        (baseLower, baseUpper) = _baseRange(mid);
-        (limitLower, limitUpper) = _bidRange(mid);
     }
 
     /**
@@ -182,29 +180,16 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
         require(shares > 0, "shares");
         require(to != address(0), "to");
 
-        {
-            // Calculate how much liquidity to withdraw
-            uint128 baseLiquidity = _liquidityForShares(baseLower, baseUpper, shares);
-            uint128 limitLiquidity = _liquidityForShares(limitLower, limitUpper, shares);
+        (uint256 base0, uint256 base1) = _burnShare(baseLower, baseUpper, shares, to);
+        (uint256 limit0, uint256 limit1) = _burnShare(limitLower, limitUpper, shares, to);
 
-            // Withdraw liquidity from Uniswap pool
-            (uint256 base0, uint256 base1) =
-                burnLiquidity(baseLower, baseUpper, baseLiquidity);
-            (uint256 limit0, uint256 limit1) =
-                burnLiquidity(limitLower, limitUpper, limitLiquidity);
+        // Transfer out tokens proportional to unused balances
+        uint256 unused0 = _withdrawShare(token0, shares, to);
+        uint256 unused1 = _withdrawShare(token1, shares, to);
 
-            // Collect amounts
-            collect(baseLower, baseUpper, base0, base1, to);
-            collect(limitLower, limitUpper, limit0, limit1, to);
-
-            // Transfer out tokens proportional to unused balances
-            uint256 unused0 = _withdrawTokens(token0, shares, to);
-            uint256 unused1 = _withdrawTokens(token1, shares, to);
-
-            // Sum up total amounts sent to recipient
-            amount0 = base0.add(limit0).add(unused0);
-            amount1 = base1.add(limit1).add(unused1);
-        }
+        // Sum up total amounts sent to recipient
+        amount0 = base0.add(limit0).add(unused0);
+        amount1 = base1.add(limit1).add(unused1);
 
         // Burn shares
         _burn(msg.sender, shares);
@@ -212,6 +197,40 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
+    }
+
+    function _burnShare(
+        int24 tickLower,
+        int24 tickUpper,
+        uint256 shares,
+        address to
+    ) internal returns (uint256 amount0, uint256 amount1) {
+        uint256 position = uint256(getPosition(tickLower, tickUpper));
+        uint128 liquidity = uint128Safe(position.mul(shares).div(totalSupply()));
+        if (liquidity > 0) {
+            (amount0, amount1) = pool.burn(tickLower, tickUpper, liquidity);
+        }
+        if (amount0 > 0 || amount1 > 0) {
+            (amount0, amount1) = pool.collect(
+                to,
+                tickLower,
+                tickUpper,
+                uint128Safe(amount0),
+                uint128Safe(amount1)
+            );
+        }
+    }
+
+    /// @dev If vault holds enough unused token balance, transfer proportional
+    /// amount to sender.
+    function _withdrawShare(
+        IERC20 token,
+        uint256 shares,
+        address to
+    ) internal returns (uint256 amount) {
+        uint256 balance = token.balanceOf(address(this));
+        amount = balance.mul(shares).div(totalSupply());
+        if (amount > 0) token.safeTransfer(to, amount);
     }
 
     /**
@@ -225,96 +244,92 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
         int24 mid = getTick();
         _checkMid(mid);
 
+        int24 midFloor = floorTick(mid);
+        int24 midCeil = midFloor + tickSpacing;
+
         // Withdraw all liquidity and collect all fees from Uniswap pool
-        uint128 basePosition = getPosition(baseLower, baseUpper);
-        uint128 limitPosition = getPosition(limitLower, limitUpper);
-        burnLiquidity(baseLower, baseUpper, basePosition);
-        burnLiquidity(limitLower, limitUpper, limitPosition);
-        collectAll(baseLower, baseUpper, address(this));
-        collectAll(limitLower, limitUpper, address(this));
+        _burnAll(baseLower, baseUpper);
+        _burnAll(limitLower, limitUpper);
 
         // Emit event with useful info
         uint256 balance0 = token0.balanceOf(address(this));
         uint256 balance1 = token1.balanceOf(address(this));
         emit Rebalance(mid, balance0, balance1, totalSupply());
 
-        // Update base range and deposit liquidity in Uniswap pool. Base range
-        // is symmetric so this order should use up all of one of the tokens.
-        (baseLower, baseUpper) = _baseRange(mid);
-        uint128 baseLiquidity = _maxDepositable(baseLower, baseUpper);
-        mintLiquidity(baseLower, baseUpper, baseLiquidity, address(this));
+        _mintBase(midFloor, midCeil, balance0, balance1);
+        _mintLimit(midFloor, midCeil);
+    }
+
+    function _burnAll(int24 tickLower, int24 tickUpper) internal {
+        uint128 liquidity = getPosition(tickLower, tickUpper);
+        uint256 owed0;
+        uint256 owed1;
+        if (liquidity > 0) {
+            (owed0, owed1) = pool.burn(tickLower, tickUpper, liquidity);
+        }
+        uint256 collect0;
+        uint256 collect1;
+        if (owed0 > 0 || owed1 > 0) {
+            (collect0, collect1) = pool.collect(
+                address(this),
+                tickLower,
+                tickUpper,
+                type(uint128).max,
+                type(uint128).max
+            );
+        }
+    }
+
+    // Update base range and deposit liquidity in Uniswap pool. Base range
+    // is symmetric so this order should use up all of one of the tokens.
+    function _mintBase(
+        int24 midFloor,
+        int24 midCeil,
+        uint256 balance0,
+        uint256 balance1
+    ) internal {
+        (int24 tickLower, int24 tickUpper) =
+            (midFloor - baseThreshold, midCeil + baseThreshold);
+        uint128 liquidity = getLiquidityForAmounts(tickLower, tickUpper, balance0, balance1);
+        if (liquidity > 0) {
+            pool.mint(
+                address(this),
+                tickLower,
+                tickUpper,
+                liquidity,
+                abi.encode(address(this))
+            );
+        }
+        (baseLower, baseUpper) = (tickLower, tickUpper);
+    }
+
+    function _mintLimit(int24 midFloor, int24 midCeil) internal {
+        uint256 balance0 = token0.balanceOf(address(this));
+        uint256 balance1 = token1.balanceOf(address(this));
 
         // Calculate limit ranges
-        (int24 bidLower, int24 bidUpper) = _bidRange(mid);
-        (int24 askLower, int24 askUpper) = _askRange(mid);
-        uint128 bidLiquidity = _maxDepositable(bidLower, bidUpper);
-        uint128 askLiquidity = _maxDepositable(askLower, askUpper);
+        (int24 bidLower, int24 bidUpper) = (midFloor - limitThreshold, midFloor);
+        (int24 askLower, int24 askUpper) = (midCeil, midCeil + limitThreshold);
+        uint128 bidLiquidity = getLiquidityForAmounts(bidLower, bidUpper, balance0, balance1);
+        uint128 askLiquidity = getLiquidityForAmounts(askLower, askUpper, balance0, balance1);
 
         // After base order, should be left with just one token, so place a
         // limit order to sell that token
-        if (bidLiquidity > askLiquidity) {
-            (limitLower, limitUpper) = (bidLower, bidUpper);
-            mintLiquidity(bidLower, bidUpper, bidLiquidity, address(this));
-        } else {
-            (limitLower, limitUpper) = (askLower, askUpper);
-            mintLiquidity(askLower, askUpper, askLiquidity, address(this));
+        bool bid = bidLiquidity > askLiquidity;
+        int24 tickLower = bid ? bidLower : askLower;
+        int24 tickUpper = bid ? bidUpper : askUpper;
+        uint128 liquidity = bid ? bidLiquidity : askLiquidity;
+
+        if (liquidity > 0) {
+            pool.mint(
+                address(this),
+                tickLower,
+                tickUpper,
+                liquidity,
+                abi.encode(address(this))
+            );
         }
-
-        // Assert base and limit ranges aren't the same, otherwise positions
-        // would get mixed up
-        assert(baseLower != limitLower || baseUpper != limitUpper);
-    }
-
-    /// @dev If vault holds enough unused token balance, transfer proportional
-    /// amount to sender.
-    function _withdrawTokens(
-        IERC20 token,
-        uint256 shares,
-        address to
-    ) internal returns (uint256 amount) {
-        uint256 balance = token.balanceOf(address(this));
-        amount = balance.mul(shares).div(totalSupply());
-        if (amount > 0) token.safeTransfer(to, amount);
-    }
-
-    /// @dev Convert shares into amount of liquidity. Shouldn't be called
-    /// when total supply is 0.
-    function _liquidityForShares(
-        int24 tickLower,
-        int24 tickUpper,
-        uint256 shares
-    ) internal view returns (uint128) {
-        uint256 position = uint256(getPosition(tickLower, tickUpper));
-        return uint128Safe(position.mul(shares).div(totalSupply()));
-    }
-
-    /// @dev Maximum liquidity that can deposited in range by vault given
-    /// its balances of token0 and token1.
-    function _maxDepositable(int24 tickLower, int24 tickUpper) internal view returns (uint128) {
-        uint256 balance0 = token0.balanceOf(address(this));
-        uint256 balance1 = token1.balanceOf(address(this));
-        return getLiquidityForAmounts(tickLower, tickUpper, balance0, balance1);
-    }
-
-    /// @dev Return lower and upper ticks for the base order. This order is
-    /// roughly symmetric around the mid price.
-    function _baseRange(int24 mid) internal view returns (int24, int24) {
-        int24 midFloor = floorTick(mid);
-        return (midFloor - baseThreshold, midFloor + tickSpacing + baseThreshold);
-    }
-
-    /// @dev Return lower and upper ticks for the bid limit order. This order
-    /// sits just below the mid price and helps rebalance closer to 50/50.
-    function _bidRange(int24 mid) internal view returns (int24, int24) {
-        int24 midFloor = floorTick(mid);
-        return (midFloor - limitThreshold, midFloor);
-    }
-
-    /// @dev Return lower and upper ticks for the ask limit order. This order
-    /// sits just above the mid price and helps rebalance closer to 50/50.
-    function _askRange(int24 mid) internal view returns (int24, int24) {
-        int24 midCeil = floorTick(mid) + tickSpacing;
-        return (midCeil, midCeil + limitThreshold);
+        (limitLower, limitUpper) = (tickLower, tickUpper);
     }
 
     /**

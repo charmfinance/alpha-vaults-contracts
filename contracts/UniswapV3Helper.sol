@@ -11,7 +11,6 @@ import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 
-
 abstract contract UniswapV3Helper is IUniswapV3MintCallback {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
@@ -22,9 +21,7 @@ abstract contract UniswapV3Helper is IUniswapV3MintCallback {
     uint24 public fee;
     int24 public tickSpacing;
 
-    constructor(
-        address _pool
-    ) {
+    constructor(address _pool) {
         pool = IUniswapV3Pool(_pool);
         token0 = IERC20(pool.token0());
         token1 = IERC20(pool.token1());
@@ -47,36 +44,6 @@ abstract contract UniswapV3Helper is IUniswapV3MintCallback {
                 abi.encode(payer)
             );
         }
-    }
-
-    function burnLiquidity(
-        int24 tickLower,
-        int24 tickUpper,
-        uint128 liquidity
-    ) internal returns (uint256 amount0, uint256 amount1) {
-        if (liquidity > 0) {
-            (amount0, amount1) = pool.burn(tickLower, tickUpper, liquidity);
-        }
-    }
-
-    function collect(
-        int24 tickLower,
-        int24 tickUpper,
-        uint256 amount0,
-        uint256 amount1,
-        address to
-    ) internal returns (uint256 collect0, uint256 collect1) {
-        if (amount0 > 0 || amount1 > 0) {
-            (collect0, collect1) = pool.collect(to, tickLower, tickUpper, uint128Safe(amount0), uint128Safe(amount1));
-        }
-    }
-
-    function collectAll(
-        int24 tickLower,
-        int24 tickUpper,
-        address to
-    ) internal returns (uint256, uint256) {
-        return pool.collect(to, tickLower, tickUpper, type(uint128).max, type(uint128).max);
     }
 
     /**
@@ -107,18 +74,22 @@ abstract contract UniswapV3Helper is IUniswapV3MintCallback {
         (liquidity, , , , ) = pool.positions(positionKey);
     }
 
-    function getPositionAmounts(int24 tickLower, int24 tickUpper) internal view returns (uint256 amount0, uint256 amount1) {
+    function getPositionAmounts(int24 tickLower, int24 tickUpper)
+        internal
+        view
+        returns (uint256 amount0, uint256 amount1)
+    {
         bytes32 positionKey = keccak256(abi.encodePacked(address(this), tickLower, tickUpper));
-        (uint128 liquidity, , , uint128 tokensOwed0, uint128 tokensOwed1) = pool.positions(positionKey);
+        (uint128 liquidity, , , uint128 tokensOwed0, uint128 tokensOwed1) =
+            pool.positions(positionKey);
         (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
 
-        (amount0, amount1) =
-            LiquidityAmounts.getAmountsForLiquidity(
-                sqrtRatioX96,
-                TickMath.getSqrtRatioAtTick(tickLower),
-                TickMath.getSqrtRatioAtTick(tickUpper),
-                liquidity
-            );
+        (amount0, amount1) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtRatioX96,
+            TickMath.getSqrtRatioAtTick(tickLower),
+            TickMath.getSqrtRatioAtTick(tickUpper),
+            liquidity
+        );
         amount0 = amount0.add(uint256(tokensOwed0));
         amount1 = amount1.add(uint256(tokensOwed1));
     }
