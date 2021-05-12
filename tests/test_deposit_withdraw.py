@@ -279,4 +279,3 @@ def test_withdraw_checks(vault, user, recipient):
         vault.withdraw(shares - 1000, 1e18, 0, recipient, {"from": user})
     with reverts("amount1Min"):
         vault.withdraw(shares - 1000, 0, 1e18, recipient, {"from": user})
-

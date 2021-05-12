@@ -91,7 +91,18 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 @given(qty2=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_manipulated_deposit(
-    vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty, buy2, qty2
+    vault,
+    pool,
+    router,
+    gov,
+    user,
+    tokens,
+    amount0Desired,
+    amount1Desired,
+    buy,
+    qty,
+    buy2,
+    qty2,
 ):
 
     # Simulate deposit and random price move
@@ -134,7 +145,18 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
 @given(qty2=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_manipulated_withdraw(
-    vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty, buy2, qty2
+    vault,
+    pool,
+    router,
+    gov,
+    user,
+    tokens,
+    amount0Desired,
+    amount1Desired,
+    buy,
+    qty,
+    buy2,
+    qty2,
 ):
 
     # Simulate deposit and random price move
@@ -175,7 +197,18 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
 @given(qty2=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_around_rebalance(
-    vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty, buy2, qty2
+    vault,
+    pool,
+    router,
+    gov,
+    user,
+    tokens,
+    amount0Desired,
+    amount1Desired,
+    buy,
+    qty,
+    buy2,
+    qty2,
 ):
 
     # Simulate deposit and random price move
@@ -203,4 +236,3 @@ def test_cannot_make_instant_profit_around_rebalance(
 
     assert total0 <= total0After + 1
     assert total1 <= total1After + 1
-

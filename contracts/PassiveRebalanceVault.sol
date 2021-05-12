@@ -132,7 +132,16 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         uint256 amount0Min,
         uint256 amount1Min,
         address to
-    ) external override nonReentrant returns (uint256 shares, uint256 amount0, uint256 amount1) {
+    )
+        external
+        override
+        nonReentrant
+        returns (
+            uint256 shares,
+            uint256 amount0,
+            uint256 amount1
+        )
+    {
         require(amount0Desired > 0 || amount1Desired > 0, "amounts both zero");
         require(to != address(0), "to");
 

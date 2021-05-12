@@ -6,7 +6,9 @@ from pytest import approx
     "amount0Desired,amount1Desired",
     [[1e4, 1e18], [1e18, 1e18]],
 )
-def test_total_amounts(vaultAfterPriceMove, tokens, user, recipient, amount0Desired, amount1Desired):
+def test_total_amounts(
+    vaultAfterPriceMove, tokens, user, recipient, amount0Desired, amount1Desired
+):
     vault = vaultAfterPriceMove
 
     # Store balances and total amounts
