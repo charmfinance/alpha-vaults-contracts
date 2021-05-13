@@ -523,16 +523,15 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         return int24((tickCumulatives[1] - tickCumulatives[0]) / _twapDuration);
     }
 
-    function collectFees(address to)
-        external
-        onlyGovernance
-        returns (uint256 _fees0, uint256 _fees1)
-    {
-        (_fees0, _fees1) = (fees0, fees1);
-        if (_fees0 > 0) token0.safeTransfer(to, _fees0);
-        if (_fees1 > 0) token1.safeTransfer(to, _fees1);
-        fees0 = 0;
-        fees1 = 0;
+    function collectProtocol(
+        uint256 amount0,
+        uint256 amount1,
+        address to
+    ) external onlyGovernance {
+        fees0 = fees0.sub(amount0);
+        fees1 = fees1.sub(amount1);
+        if (amount0 > 0) token0.safeTransfer(to, amount0);
+        if (amount1 > 0) token1.safeTransfer(to, amount1);
     }
 
     function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {

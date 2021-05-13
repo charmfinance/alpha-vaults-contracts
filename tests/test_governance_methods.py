@@ -47,13 +47,16 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     balance0 = tokens[0].balanceOf(recipient)
     balance1 = tokens[1].balanceOf(recipient)
     with reverts("governance"):
-        vault.collectFees(recipient, {"from": user})
-    tx = vault.collectFees(recipient, {"from": gov})
-    assert tx.return_value == (fees0, fees1)
-    assert vault.fees0() == 0
-    assert vault.fees1() == 0
-    assert tokens[0].balanceOf(recipient) - balance0 == fees0 > 0
-    assert tokens[1].balanceOf(recipient) - balance1 == fees1 > 0
+        vault.collectProtocol(1e3, 1e4, recipient, {"from": user})
+    with reverts("SafeMath: subtraction overflow"):
+        vault.collectProtocol(1e12, 1e4, recipient, {"from": gov})
+    with reverts("SafeMath: subtraction overflow"):
+        vault.collectProtocol(1e3, 1e12, recipient, {"from": gov})
+    vault.collectProtocol(1e3, 1e4, recipient, {"from": gov})
+    assert vault.fees0() == fees0 - 1e3
+    assert vault.fees1() == fees1 - 1e4
+    assert tokens[0].balanceOf(recipient) - balance0 == 1e3
+    assert tokens[1].balanceOf(recipient) - balance1 == 1e4 > 0
 
     # Check setting protocol fee
     with reverts("governance"):
