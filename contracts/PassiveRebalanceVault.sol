@@ -180,17 +180,20 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             amount1 = Math.min(amount1, amount1Desired);
 
             shares = cross.mul(_totalSupply).div(total0).div(total1);
-            shares = shares.sub(shares.mul(protocolFee).div(1e6));
+        }
+
+        // Update fees
+        uint256 _protocolFee = protocolFee;
+        if (_protocolFee > 0) {
+            shares = shares.sub(shares.mul(_protocolFee).div(1e6));
+            fees0 = fees0.add(amount0.mul(_protocolFee).div(1e6));
+            fees1 = fees1.add(amount1.mul(_protocolFee).div(1e6));
         }
 
         require(shares > 0, "shares");
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
         require(_totalSupply.add(shares) <= maxTotalSupply, "maxTotalSupply");
-
-        // Update fees
-        fees0 = fees0.add(amount0.mul(protocolFee).div(1e6));
-        fees1 = fees1.add(amount1.mul(protocolFee).div(1e6));
 
         // Mint shares to recipient
         _mint(to, shares);
