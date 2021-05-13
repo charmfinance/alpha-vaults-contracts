@@ -13,8 +13,8 @@ import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.so
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
+import "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
 
-import "./UniswapV3Helper.sol";
 import "../interfaces/IVault.sol";
 
 /**
@@ -49,9 +49,15 @@ import "../interfaces/IVault.sol";
  *          limit order is placed only one side of the current price so that
  *          the other token which it holds more of is used up.
  */
-contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helper {
+contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
+
+    IUniswapV3Pool public pool;
+    IERC20 public token0;
+    IERC20 public token1;
+    uint24 public fee;
+    int24 public tickSpacing;
 
     int24 public baseThreshold;
     int24 public limitThreshold;
@@ -84,7 +90,13 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
         int24 _maxTwapDeviation,
         uint32 _twapDuration,
         uint256 _maxTotalSupply
-    ) ERC20("Alpha Vault", "AV") UniswapV3Helper(_pool) {
+    ) ERC20("Alpha Vault", "AV") {
+        pool = IUniswapV3Pool(_pool);
+        token0 = IERC20(pool.token0());
+        token1 = IERC20(pool.token1());
+        fee = pool.fee();
+        tickSpacing = pool.tickSpacing();
+
         baseThreshold = _baseThreshold;
         limitThreshold = _limitThreshold;
         maxTwapDeviation = _maxTwapDeviation;
@@ -95,8 +107,9 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
         _checkThreshold(_baseThreshold);
         _checkThreshold(_limitThreshold);
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+        require(_twapDuration > 0, "twapDuration");
 
-        int24 mid = getTick();
+        (, int24 mid, , , , , ) = pool.slot0();
         _checkMid(mid);
     }
 
@@ -205,8 +218,8 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
         uint256 shares,
         address to
     ) internal returns (uint256 amount0, uint256 amount1) {
-        uint256 position = uint256(getPosition(tickLower, tickUpper));
-        uint128 liquidity = uint128Safe(position.mul(shares).div(totalSupply()));
+        (uint128 position, , , , ) = _position(tickLower, tickUpper);
+        uint128 liquidity = _uint128Safe(uint256(position).mul(shares).div(totalSupply()));
         if (liquidity > 0) {
             (amount0, amount1) = pool.burn(tickLower, tickUpper, liquidity);
         }
@@ -215,8 +228,8 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
                 to,
                 tickLower,
                 tickUpper,
-                uint128Safe(amount0),
-                uint128Safe(amount1)
+                _uint128Safe(amount0),
+                _uint128Safe(amount1)
             );
         }
     }
@@ -241,10 +254,10 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
     function rebalance() external override nonReentrant {
         require(keeper == address(0) || msg.sender == keeper, "keeper");
 
-        int24 mid = getTick();
+        (, int24 mid, , , , , ) = pool.slot0();
         _checkMid(mid);
 
-        int24 midFloor = floorTick(mid);
+        int24 midFloor = _floor(mid);
         int24 midCeil = midFloor + tickSpacing;
 
         // Withdraw all liquidity and collect all fees from Uniswap pool
@@ -261,7 +274,7 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
     }
 
     function _burnAll(int24 tickLower, int24 tickUpper) internal {
-        uint128 liquidity = getPosition(tickLower, tickUpper);
+        (uint128 liquidity, , , , ) = _position(tickLower, tickUpper);
         uint256 owed0;
         uint256 owed1;
         if (liquidity > 0) {
@@ -290,7 +303,7 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
     ) internal {
         (int24 tickLower, int24 tickUpper) =
             (midFloor - baseThreshold, midCeil + baseThreshold);
-        uint128 liquidity = getLiquidityForAmounts(tickLower, tickUpper, balance0, balance1);
+        uint128 liquidity = _liquidityForAmounts(tickLower, tickUpper, balance0, balance1);
         if (liquidity > 0) {
             pool.mint(
                 address(this),
@@ -310,8 +323,8 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
         // Calculate limit ranges
         (int24 bidLower, int24 bidUpper) = (midFloor - limitThreshold, midFloor);
         (int24 askLower, int24 askUpper) = (midCeil, midCeil + limitThreshold);
-        uint128 bidLiquidity = getLiquidityForAmounts(bidLower, bidUpper, balance0, balance1);
-        uint128 askLiquidity = getLiquidityForAmounts(askLower, askUpper, balance0, balance1);
+        uint128 bidLiquidity = _liquidityForAmounts(bidLower, bidUpper, balance0, balance1);
+        uint128 askLiquidity = _liquidityForAmounts(askLower, askUpper, balance0, balance1);
 
         // After base order, should be left with just one token, so place a
         // limit order to sell that token
@@ -337,10 +350,91 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
      * each token this vault would hold if it withdrew all its liquidity.
      */
     function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
-        (uint256 base0, uint256 base1) = getPositionAmounts(baseLower, baseUpper);
-        (uint256 limit0, uint256 limit1) = getPositionAmounts(limitLower, limitUpper);
+        (uint256 base0, uint256 base1) = _positionAmounts(baseLower, baseUpper);
+        (uint256 limit0, uint256 limit1) = _positionAmounts(limitLower, limitUpper);
         total0 = token0.balanceOf(address(this)).add(base0).add(limit0);
         total1 = token1.balanceOf(address(this)).add(base1).add(limit1);
+    }
+
+    function _positionAmounts(int24 tickLower, int24 tickUpper)
+        internal
+        view
+        returns (uint256 amount0, uint256 amount1)
+    {
+        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
+        (uint128 liquidity, , , uint128 tokensOwed0, uint128 tokensOwed1) =
+            pool.positions(positionKey);
+
+        (amount0, amount1) = _amountsForLiquidity(tickLower, tickUpper, liquidity);
+        amount0 = amount0.add(uint256(tokensOwed0));
+        amount1 = amount1.add(uint256(tokensOwed1));
+    }
+
+    /// @dev Callback for Uniswap V3 pool.
+    function uniswapV3MintCallback(
+        uint256 amount0,
+        uint256 amount1,
+        bytes calldata data
+    ) external override {
+        require(msg.sender == address(pool));
+        address payer = abi.decode(data, (address));
+
+        if (payer == address(this)) {
+            if (amount0 > 0) token0.safeTransfer(msg.sender, amount0);
+            if (amount1 > 0) token1.safeTransfer(msg.sender, amount1);
+        } else {
+            if (amount0 > 0) token0.safeTransferFrom(payer, msg.sender, amount0);
+            if (amount1 > 0) token1.safeTransferFrom(payer, msg.sender, amount1);
+        }
+    }
+
+    function _position(int24 tickLower, int24 tickUpper)
+        internal
+        view
+        returns (
+            uint128,
+            uint256,
+            uint256,
+            uint128,
+            uint128
+        )
+    {
+        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
+        return pool.positions(positionKey);
+    }
+
+    /// @dev Wrapper around `getAmountsForLiquidity()` for convenience.
+    function _amountsForLiquidity(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity
+    ) internal view returns (uint256, uint256) {
+        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
+        return
+            LiquidityAmounts.getAmountsForLiquidity(
+                sqrtRatioX96,
+                TickMath.getSqrtRatioAtTick(tickLower),
+                TickMath.getSqrtRatioAtTick(tickUpper),
+                liquidity
+            );
+    }
+
+    /// @dev Wrapper around `getLiquidityForAmounts()` for convenience.
+    function _liquidityForAmounts(
+        int24 tickLower,
+        int24 tickUpper,
+        uint256 amount0,
+        uint256 amount1
+    ) internal view returns (uint128) {
+        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
+        return
+            LiquidityAmounts.getLiquidityForAmounts(
+                sqrtRatioX96,
+                TickMath.getSqrtRatioAtTick(tickLower),
+                TickMath.getSqrtRatioAtTick(tickUpper),
+                amount0,
+                amount1
+            );
     }
 
     /// @dev Revert if current price is too close to min or max ticks allowed
@@ -354,7 +448,7 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
 
         // Check TWAP deviation. This check prevents price manipulation before
         // the rebalance and also avoids rebalancing when price has just spiked.
-        int24 twap = getTwap(twapDuration);
+        int24 twap = getTwap();
         int24 deviation = mid > twap ? mid - twap : twap - mid;
         require(deviation <= maxTwapDeviation, "maxTwapDeviation");
     }
@@ -363,6 +457,33 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
         require(threshold % tickSpacing == 0, "threshold not tick multiple");
         require(threshold < TickMath.MAX_TICK, "threshold too high");
         require(threshold > 0, "threshold not positive");
+    }
+
+    /// @dev Round tick down towards negative infinity so that it is a multiple
+    /// of `tickSpacing`.
+    function _floor(int24 tick) internal view returns (int24) {
+        int24 compressed = tick / tickSpacing;
+        if (tick < 0 && tick % tickSpacing != 0) compressed--;
+        return compressed * tickSpacing;
+    }
+
+    function _uint128Safe(uint256 x) internal pure returns (uint128) {
+        assert(x <= type(uint128).max);
+        return uint128(x);
+    }
+
+    /**
+     * @notice Fetch TWAP from Uniswap V3 pool. If `twapDuration` is 0, returns
+     * current price.
+     */
+    function getTwap() public view returns (int24) {
+        uint32 _twapDuration = twapDuration;
+        uint32[] memory secondsAgo = new uint32[](2);
+        secondsAgo[0] = _twapDuration;
+        secondsAgo[1] = 0;
+
+        (int56[] memory tickCumulatives, ) = pool.observe(secondsAgo);
+        return int24((tickCumulatives[1] - tickCumulatives[0]) / _twapDuration);
     }
 
     function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {
@@ -381,6 +502,7 @@ contract PassiveRebalanceVault is IVault, ERC20, ReentrancyGuard, UniswapV3Helpe
     }
 
     function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
+        require(_twapDuration > 0, "twapDuration");
         twapDuration = _twapDuration;
     }
 
