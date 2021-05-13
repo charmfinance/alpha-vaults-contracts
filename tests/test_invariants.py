@@ -6,10 +6,22 @@ from pytest import approx
     "amount0Desired,amount1Desired",
     [[1e4, 1e18], [1e18, 1e18]],
 )
+@pytest.mark.parametrize(
+    "protocolFee",
+    [0, 10000, 500000],
+)
 def test_total_amounts(
-    vaultAfterPriceMove, tokens, user, recipient, amount0Desired, amount1Desired
+    vaultAfterPriceMove,
+    tokens,
+    gov,
+    user,
+    recipient,
+    amount0Desired,
+    amount1Desired,
+    protocolFee,
 ):
     vault = vaultAfterPriceMove
+    vault.setProtocolFee(protocolFee, {"from": gov})
 
     # Store balances and total amounts
     balance0 = tokens[0].balanceOf(user)
@@ -21,18 +33,31 @@ def test_total_amounts(
     _, amount0, amount1 = tx.return_value
 
     # Check amounts match total amounts
-    assert approx(amount0 * 0.99, abs=1) == vault.getTotalAmounts()[0] - total0
-    assert approx(amount1 * 0.99, abs=1) == vault.getTotalAmounts()[1] - total1
+    mult = 1.0 - protocolFee / 1e6
+    assert approx(amount0 * mult, abs=1) == vault.getTotalAmounts()[0] - total0
+    assert approx(amount1 * mult, abs=1) == vault.getTotalAmounts()[1] - total1
 
 
 @pytest.mark.parametrize(
     "amount0Desired,amount1Desired",
     [[1e4, 1e18], [1e18, 1e18]],
 )
+@pytest.mark.parametrize(
+    "protocolFee",
+    [0, 10000, 500000],
+)
 def test_total_amounts_per_share_do_not_decrease(
-    vaultAfterPriceMove, tokens, user, recipient, amount0Desired, amount1Desired
+    vaultAfterPriceMove,
+    tokens,
+    gov,
+    user,
+    recipient,
+    amount0Desired,
+    amount1Desired,
+    protocolFee,
 ):
     vault = vaultAfterPriceMove
+    vault.setProtocolFee(protocolFee, {"from": gov})
 
     # Store balances and total amounts
     total0, total1 = vault.getTotalAmounts()
@@ -54,11 +79,16 @@ def test_total_amounts_per_share_do_not_decrease(
     assert approx(newValuePerShare1, abs=1) == valuePerShare1
 
 
+@pytest.mark.parametrize(
+    "protocolFee",
+    [0, 10000, 500000],
+)
 @pytest.mark.parametrize("buy", [False, True])
 @pytest.mark.parametrize("big", [False, True])
 def test_total_amounts_do_not_change_after_rebalance(
-    vault, pool, tokens, router, getPositions, gov, user, buy, big
+    vault, pool, tokens, router, getPositions, gov, user, protocolFee, buy, big
 ):
+    vault.setProtocolFee(protocolFee, {"from": gov})
 
     # Mint some liquidity
     vault.deposit(1e8, 1e10, 0, 0, gov, {"from": gov})
