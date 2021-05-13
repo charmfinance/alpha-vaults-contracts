@@ -36,7 +36,6 @@ MAX_EXAMPLES = 5
 def test_rebalance_uses_up_all_balances(
     vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
-
     # Simulate random deposit and random price move
     vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
     vault.rebalance({"from": user})
@@ -60,6 +59,9 @@ def test_rebalance_uses_up_all_balances(
 def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
+
+    # Set fee to 0 since this when an arb is most likely to work
+    vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -104,6 +106,9 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     buy2,
     qty2,
 ):
+
+    # Set fee to 0 since this when an arb is most likely to work
+    vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -159,6 +164,9 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     qty2,
 ):
 
+    # Set fee to 0 since this when an arb is most likely to work
+    vault.setProtocolFee(0, {"from": gov})
+
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
     vault.rebalance({"from": user})
@@ -210,6 +218,9 @@ def test_cannot_make_instant_profit_around_rebalance(
     buy2,
     qty2,
 ):
+
+    # Set fee to 0 since this when an arb is most likely to work
+    vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})

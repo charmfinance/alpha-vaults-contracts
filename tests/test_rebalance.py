@@ -55,8 +55,8 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
         assert rebalance[0] > 0
 
     # Check no tokens left unused. Only small amount left due to rounding
-    assert tokens[0].balanceOf(vault) < 1000
-    assert tokens[1].balanceOf(vault) < 1000
+    assert tokens[0].balanceOf(vault) - vault.fees0() < 1000
+    assert tokens[1].balanceOf(vault) - vault.fees1() < 1000
 
     # Check event
     total0, total1 = vault.getTotalAmounts()

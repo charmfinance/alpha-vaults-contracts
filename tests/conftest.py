@@ -73,7 +73,15 @@ def tokens(MockToken, pool):
 
 @pytest.fixture
 def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
-    vault = gov.deploy(PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 100e18)
+    # baseThreshold = 2400
+    # limitThreshold = 1200
+    # maxTwapDeviation = 200000 (big)
+    # twapDuration = 600 (10 minutes)
+    # protocolFee = 10000 (1%)
+    # maxTotalSupply = 100e18 (100 tokens)
+    vault = gov.deploy(
+        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 10000, 100e18
+    )
 
     for u in users:
         tokens[0].approve(vault, 100e18, {"from": u})

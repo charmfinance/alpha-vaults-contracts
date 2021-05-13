@@ -21,8 +21,8 @@ def test_total_amounts(
     _, amount0, amount1 = tx.return_value
 
     # Check amounts match total amounts
-    assert approx(amount0, abs=1) == vault.getTotalAmounts()[0] - total0
-    assert approx(amount1, abs=1) == vault.getTotalAmounts()[1] - total1
+    assert approx(amount0 * 0.99, abs=1) == vault.getTotalAmounts()[0] - total0
+    assert approx(amount1 * 0.99, abs=1) == vault.getTotalAmounts()[1] - total1
 
 
 @pytest.mark.parametrize(

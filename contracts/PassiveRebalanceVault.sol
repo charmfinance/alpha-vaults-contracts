@@ -73,12 +73,15 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     int24 public limitThreshold;
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
+    uint256 public protocolFee;
     uint256 public maxTotalSupply;
 
     int24 public baseLower;
     int24 public baseUpper;
     int24 public limitLower;
     int24 public limitUpper;
+    uint256 public fees0;
+    uint256 public fees1;
 
     address public governance;
     address public pendingGovernance;
@@ -91,6 +94,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      * @param _limitThreshold Used to determine range of limit order
      * @param _maxTwapDeviation Max deviation from TWAP during rebalance
      * @param _twapDuration TWAP duration in seconds for rebalance check
+     * @param _protocolFee Fee on deposits expressed as multiple of 1e-6
      * @param _maxTotalSupply Pause deposits if total supply exceeds this
      */
     constructor(
@@ -99,6 +103,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         int24 _limitThreshold,
         int24 _maxTwapDeviation,
         uint32 _twapDuration,
+        uint256 _protocolFee,
         uint256 _maxTotalSupply
     ) ERC20("Alpha Vault", "AV") {
         pool = IUniswapV3Pool(_pool);
@@ -111,6 +116,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         limitThreshold = _limitThreshold;
         maxTwapDeviation = _maxTwapDeviation;
         twapDuration = _twapDuration;
+        protocolFee = _protocolFee;
         maxTotalSupply = _maxTotalSupply;
         governance = msg.sender;
         keeper = msg.sender;
@@ -119,6 +125,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         _checkThreshold(_limitThreshold);
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
         require(_twapDuration > 0, "twapDuration");
+        require(_protocolFee < 1e6, "protocolFee");
 
         (, int24 mid, , , , , ) = pool.slot0();
         _checkMid(mid);
@@ -173,12 +180,17 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             amount1 = Math.min(amount1, amount1Desired);
 
             shares = cross.mul(_totalSupply).div(total0).div(total1);
+            shares = shares.sub(shares.mul(protocolFee).div(1e6));
         }
 
         require(shares > 0, "shares");
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
         require(_totalSupply.add(shares) <= maxTotalSupply, "maxTotalSupply");
+
+        // Update fees
+        fees0 = fees0.add(amount0.mul(protocolFee).div(1e6));
+        fees1 = fees1.add(amount1.mul(protocolFee).div(1e6));
 
         // Mint shares to recipient
         _mint(to, shares);
@@ -211,8 +223,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             _burnLiquidityShare(limitLower, limitUpper, shares, to);
 
         // Transfer out tokens proportional to unused balances
-        uint256 unused0 = _transferTokenShare(token0, shares, to);
-        uint256 unused1 = _transferTokenShare(token1, shares, to);
+        uint256 _totalSupply = totalSupply();
+        uint256 unused0 = _balance0().mul(shares).div(_totalSupply);
+        uint256 unused1 = _balance1().mul(shares).div(_totalSupply);
+        if (unused0 > 0) token0.safeTransfer(to, unused0);
+        if (unused1 > 0) token1.safeTransfer(to, unused1);
 
         // Sum up total amounts sent to recipient
         amount0 = base0.add(limit0).add(unused0);
@@ -252,18 +267,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         }
     }
 
-    /// @dev Calculates proportion of unused balance from `shares` and transfer
-    /// it to `to`.
-    function _transferTokenShare(
-        IERC20 token,
-        uint256 shares,
-        address to
-    ) internal returns (uint256 amount) {
-        uint256 balance = token.balanceOf(address(this));
-        amount = balance.mul(shares).div(totalSupply());
-        if (amount > 0) token.safeTransfer(to, amount);
-    }
-
     /**
      * @notice Updates vault's positions depending on how the price has moved.
      * Reverts if current price deviates too much from the TWAP, or if the
@@ -283,17 +286,15 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         _burnAllLiquidity(limitLower, limitUpper);
 
         // Emit event with useful info
-        uint256 balance0 = token0.balanceOf(address(this));
-        uint256 balance1 = token1.balanceOf(address(this));
+        uint256 balance0 = _balance0();
+        uint256 balance1 = _balance1();
         emit Rebalance(mid, balance0, balance1, totalSupply());
 
         // Place base order on Uniswap
         _mintBaseOrder(midFloor, midCeil, balance0, balance1);
 
         // Place limit order on Uniswap
-        balance0 = token0.balanceOf(address(this));
-        balance1 = token1.balanceOf(address(this));
-        _mintLimitOrder(midFloor, midCeil, balance0, balance1);
+        _mintLimitOrder(midFloor, midCeil, _balance0(), _balance1());
     }
 
     function _burnAllLiquidity(int24 tickLower, int24 tickUpper)
@@ -383,8 +384,16 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
         (uint256 base0, uint256 base1) = _positionAmounts(baseLower, baseUpper);
         (uint256 limit0, uint256 limit1) = _positionAmounts(limitLower, limitUpper);
-        total0 = token0.balanceOf(address(this)).add(base0).add(limit0);
-        total1 = token1.balanceOf(address(this)).add(base1).add(limit1);
+        total0 = _balance0().add(base0).add(limit0);
+        total1 = _balance1().add(base1).add(limit1);
+    }
+
+    function _balance0() internal view returns (uint256) {
+        return token0.balanceOf(address(this)).sub(fees0);
+    }
+
+    function _balance1() internal view returns (uint256) {
+        return token1.balanceOf(address(this)).sub(fees1);
     }
 
     /// @dev Calculates amounts of token0 and token1 held in a position.
@@ -511,6 +520,18 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         return int24((tickCumulatives[1] - tickCumulatives[0]) / _twapDuration);
     }
 
+    function collectFees(address to)
+        external
+        onlyGovernance
+        returns (uint256 _fees0, uint256 _fees1)
+    {
+        (_fees0, _fees1) = (fees0, fees1);
+        if (_fees0 > 0) token0.safeTransfer(to, _fees0);
+        if (_fees1 > 0) token1.safeTransfer(to, _fees1);
+        fees0 = 0;
+        fees1 = 0;
+    }
+
     function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {
         _checkThreshold(_baseThreshold);
         baseThreshold = _baseThreshold;
@@ -529,6 +550,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
         require(_twapDuration > 0, "twapDuration");
         twapDuration = _twapDuration;
+    }
+
+    function setProtocolFee(uint256 _protocolFee) external onlyGovernance {
+        require(_protocolFee < 1e6, "protocolFee");
+        protocolFee = _protocolFee;
     }
 
     function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {

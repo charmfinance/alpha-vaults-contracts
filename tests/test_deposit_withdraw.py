@@ -35,6 +35,10 @@ def test_initial_deposit(
     assert amount0 == balance0 - tokens[0].balanceOf(user)
     assert amount1 == balance1 - tokens[1].balanceOf(user)
 
+    # Check vault updates fees correctly
+    assert vault.fees0() == amount0 * 0.01
+    assert vault.fees1() == amount1 * 0.01
+
     # Check event
     assert tx.events["Deposit"] == {
         "sender": user,
@@ -65,6 +69,7 @@ def test_deposit(
     balance1 = tokens[1].balanceOf(user)
     totalSupply = vault.totalSupply()
     total0, total1 = vault.getTotalAmounts()
+    fees0, fees1 = vault.fees0(), vault.fees1()
 
     # Deposit
     tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, recipient, {"from": user})
@@ -89,6 +94,10 @@ def test_deposit(
     assert approx(total0 * total1After) == total1 * total0After
     assert approx(total0 * (totalSupply + shares)) == total0After * totalSupply
     assert approx(total1 * (totalSupply + shares)) == total1After * totalSupply
+
+    # Check vault updates fees correctly
+    assert vault.fees0() - fees0 == amount0 * 0.01
+    assert vault.fees1() - fees1 == amount1 * 0.01
 
     # Check event
     assert tx.events["Deposit"] == {
