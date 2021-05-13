@@ -38,17 +38,17 @@ def test_rebalance_uses_up_all_balances(
 ):
     # Simulate random deposit and random price move
     vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
-    vault.rebalance({"from": user})
+    vault.rebalance({"from": gov})
     router.swap(pool, buy, qty, {"from": user})
 
     # Ignore TWAP deviation
     vault.setMaxTwapDeviation(1 << 22, {"from": gov})
 
-    vault.rebalance({"from": user})
+    vault.rebalance({"from": gov})
 
     # Check leftover balances is low
-    assert tokens[0].balanceOf(vault) < 10000
-    assert tokens[1].balanceOf(vault) < 10000
+    assert tokens[0].balanceOf(vault) - vault.fees0() < 10000
+    assert tokens[1].balanceOf(vault) - vault.fees1() < 10000
 
 
 @given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
@@ -65,7 +65,7 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": user})
+    vault.rebalance({"from": gov})
     router.swap(pool, buy, qty, {"from": user})
 
     # Deposit
@@ -112,7 +112,7 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": user})
+    vault.rebalance({"from": gov})
     router.swap(pool, buy, qty, {"from": user})
 
     # Store initial balances
@@ -169,7 +169,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": user})
+    vault.rebalance({"from": gov})
     router.swap(pool, buy, qty, {"from": user})
 
     # Store initial balances
@@ -224,7 +224,7 @@ def test_cannot_make_instant_profit_around_rebalance(
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": user})
+    vault.rebalance({"from": gov})
     router.swap(pool, buy, qty, {"from": user})
 
     # Store totals before
@@ -235,7 +235,7 @@ def test_cannot_make_instant_profit_around_rebalance(
     shares, amount0Deposit, amount1Deposit = tx.return_value
 
     # Rebalance
-    vault.rebalance({"from": user})
+    vault.rebalance({"from": gov})
 
     # Withdraw all
     tx = vault.withdraw(shares, 0, 0, user, {"from": user})
