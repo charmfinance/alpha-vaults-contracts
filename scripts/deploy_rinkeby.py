@@ -8,6 +8,13 @@ UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0")
 # Uniswap v3 factory on Rinkeby
 FACTORY = "0xAE28628c0fdFb5e54d60FEDC6C9085199aec14dF"
 
+BASE_THRESHOLD = 1800
+LIMIT_THRESHOLD = 600
+MAX_TWAP_DEVIATION = 100
+TWAP_DURATION = 60
+PROTOCOL_FEE = 10000
+MAX_TOTAL_SUPPLY = 1e17
+
 
 def main():
     deployer = accounts.load("deployer")
@@ -20,6 +27,8 @@ def main():
 
     factory = UniswapV3Core.interface.IUniswapV3Factory(FACTORY)
     factory.createPool(eth, usdc, 3000, {"from": deployer})
+    time.sleep(15)
+
     pool = UniswapV3Core.interface.IUniswapV3Pool(factory.getPool(eth, usdc, 3000))
 
     inverse = pool.token0() == usdc
@@ -41,12 +50,12 @@ def main():
     vault = deployer.deploy(
         PassiveRebalanceVault,
         pool,
-        1800,
-        600,
-        100,
-        0,
-        600,
-        100e18,
+        BASE_THRESHOLD,
+        LIMIT_THRESHOLD,
+        MAX_TWAP_DEVIATION,
+        TWAP_DURATION,
+        PROTOCOL_FEE,
+        MAX_TOTAL_SUPPLY,
         publish_source=True,
     )
 
