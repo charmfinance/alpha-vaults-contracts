@@ -46,6 +46,8 @@ def test_initial_deposit(
         "shares": shares,
         "amount0": amount0,
         "amount1": amount1,
+    }
+    assert tx.events["EarnProtocolFees"] == {
         "protocolFees0": amount0 * 0.01,
         "protocolFees1": amount1 * 0.01,
     }
@@ -108,6 +110,8 @@ def test_deposit(
         "shares": shares,
         "amount0": amount0,
         "amount1": amount1,
+    }
+    assert tx.events["EarnProtocolFees"] == {
         "protocolFees0": amount0 * 0.01,
         "protocolFees1": amount1 * 0.01,
     }
@@ -216,7 +220,7 @@ def test_deposit_when_vault_only_has_token1(
 
 
 def test_deposit_checks(vault, user):
-    with reverts("amounts both zero"):
+    with reverts("amounts"):
         vault.deposit(0, 0, 0, 0, user, {"from": user})
     with reverts("to"):
         vault.deposit(1e8, 1e8, 0, 0, ZERO_ADDRESS, {"from": user})

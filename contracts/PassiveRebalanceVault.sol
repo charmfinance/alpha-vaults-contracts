@@ -166,26 +166,56 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             uint256 amount1
         )
     {
-        require(amount0Desired > 0 || amount1Desired > 0, "amounts both zero");
+        require(amount0Desired > 0 || amount1Desired > 0, "amounts");
         require(to != address(0), "to");
 
-        uint256 _totalSupply = totalSupply();
-        if (_totalSupply == 0) {
-            // For the first deposit, just transfer in the amounts specified
-            // by the user
+        (amount0, amount1, shares) = _calculateDepositAmountsAndShares(
+            amount0Desired,
+            amount1Desired
+        );
+        require(amount0 >= amount0Min, "amount0Min");
+        require(amount1 >= amount1Min, "amount1Min");
+
+        shares = _chargeDepositFees(amount0, amount1, shares);
+        require(shares > 0, "shares");
+
+        // Mint shares to recipient
+        _mint(to, shares);
+        emit Deposit(msg.sender, to, shares, amount0, amount1);
+        require(totalSupply() <= maxTotalSupply, "maxTotalSupply");
+
+        // Transfer in tokens from sender
+        if (amount0 > 0) token0.safeTransferFrom(msg.sender, address(this), amount0);
+        if (amount1 > 0) token1.safeTransferFrom(msg.sender, address(this), amount1);
+    }
+
+    function _calculateDepositAmountsAndShares(uint256 amount0Desired, uint256 amount1Desired)
+        internal
+        view
+        returns (
+            uint256 amount0,
+            uint256 amount1,
+            uint256 shares
+        )
+    {
+        uint256 totalSupply = totalSupply();
+        if (totalSupply == 0) {
+            // For the first deposit, just transfer in the desired amounts
             amount0 = amount0Desired;
             amount1 = amount1Desired;
             shares = Math.max(amount0, amount1);
         } else {
             (uint256 total0, uint256 total1) = getTotalAmounts();
 
-            // Calculate proportional amounts to deposit
+            // Calculate the largest possible amount0 and amount1 proportional
+            // to total0 and total1, but not greater than amount0Desired and
+            // amount1Desired
             if (total0 == 0) {
                 amount1 = amount1Desired;
-                shares = amount1.mul(_totalSupply).div(total1);
+                shares = amount1.mul(totalSupply).div(total1);
             } else if (total1 == 0) {
                 amount0 = amount0Desired;
-                shares = amount0.mul(_totalSupply).div(total0);
+                shares = amount0.mul(totalSupply).div(total0);
             } else {
                 uint256 cross =
                     Math.min(amount0Desired.mul(total1), amount1Desired.mul(total0));
@@ -193,33 +223,27 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
                 amount0 = cross.sub(1).div(total1).add(1); // round up
                 amount1 = cross.sub(1).div(total0).add(1); // round up
-                shares = cross.mul(_totalSupply).div(total0).div(total1);
+                shares = cross.mul(totalSupply).div(total0).div(total1);
             }
         }
+    }
 
-        // Update protocol fees
-        uint256 charged0;
-        uint256 charged1;
+    function _chargeDepositFees(
+        uint256 amount0,
+        uint256 amount1,
+        uint256 shares
+    ) internal returns (uint256) {
         uint256 _depositFee = depositFee;
         if (_depositFee > 0) {
             shares = shares.sub(shares.mul(_depositFee).div(1e6));
-            charged0 = amount0.mul(_depositFee).div(1e6);
-            charged1 = amount1.mul(_depositFee).div(1e6);
+            uint256 charged0 = amount0.mul(_depositFee).div(1e6);
+            uint256 charged1 = amount1.mul(_depositFee).div(1e6);
+
             fees0 = fees0.add(charged0);
             fees1 = fees1.add(charged1);
+            emit EarnProtocolFees(charged0, charged1);
         }
-
-        require(shares > 0, "shares");
-        require(amount0 >= amount0Min, "amount0Min");
-        require(amount1 >= amount1Min, "amount1Min");
-        require(_totalSupply.add(shares) <= maxTotalSupply, "maxTotalSupply");
-
-        // Mint shares to recipient
-        _mint(to, shares);
-        emit Deposit(msg.sender, to, shares, amount0, amount1, charged0, charged1);
-
-        if (amount0 > 0) token0.safeTransferFrom(msg.sender, address(this), amount0);
-        if (amount1 > 0) token1.safeTransferFrom(msg.sender, address(this), amount1);
+        return shares;
     }
 
     /**
@@ -240,26 +264,27 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(shares > 0, "shares");
         require(to != address(0), "to");
 
-        (uint256 base0, uint256 base1) = _burnLiquidityShare(baseLower, baseUpper, shares, to);
-        (uint256 limit0, uint256 limit1) =
+        (uint256 baseAmount0, uint256 baseAmount1) =
+            _burnLiquidityShare(baseLower, baseUpper, shares, to);
+        (uint256 limitAmount0, uint256 limitAmount1) =
             _burnLiquidityShare(limitLower, limitUpper, shares, to);
 
         // Transfer out tokens proportional to unused balances
-        uint256 _totalSupply = totalSupply();
-        uint256 unused0 = _balance0().mul(shares).div(_totalSupply);
-        uint256 unused1 = _balance1().mul(shares).div(_totalSupply);
-        if (unused0 > 0) token0.safeTransfer(to, unused0);
-        if (unused1 > 0) token1.safeTransfer(to, unused1);
+        uint256 totalSupply = totalSupply();
+        uint256 unusedAmount0 = _balance0().mul(shares).div(totalSupply);
+        uint256 unusedAmount1 = _balance1().mul(shares).div(totalSupply);
+        if (unusedAmount0 > 0) token0.safeTransfer(to, unusedAmount0);
+        if (unusedAmount1 > 0) token1.safeTransfer(to, unusedAmount1);
 
         // Sum up total amounts sent to recipient
-        amount0 = base0.add(limit0).add(unused0);
-        amount1 = base1.add(limit1).add(unused1);
-
-        // Burn shares
-        _burn(msg.sender, shares);
+        amount0 = baseAmount0.add(limitAmount0).add(unusedAmount0);
+        amount1 = baseAmount1.add(limitAmount1).add(unusedAmount1);
 
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
+
+        // Burn shares
+        _burn(msg.sender, shares);
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
     }
 
@@ -307,11 +332,10 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         _burnAllLiquidity(baseLower, baseUpper);
         _burnAllLiquidity(limitLower, limitUpper);
 
-        (uint256 balance0, uint256 balance1, uint256 charged0, uint256 charged1) =
-            _chargeStreamingFees();
+        (uint256 balance0, uint256 balance1) = _chargeStreamingFees();
 
         // Emit event with useful info
-        emit Snapshot(mid, balance0, balance1, totalSupply(), charged0, charged1);
+        emit Snapshot(mid, balance0, balance1, totalSupply());
 
         // Place base order on Uniswap
         _mintBaseOrder(midFloor, midCeil, balance0, balance1);
@@ -343,15 +367,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         emit CollectFees(collect0.sub(owed0), collect1.sub(owed1));
     }
 
-    function _chargeStreamingFees()
-        internal
-        returns (
-            uint256 balance0,
-            uint256 balance1,
-            uint256 charged0,
-            uint256 charged1
-        )
-    {
+    function _chargeStreamingFees() internal returns (uint256 balance0, uint256 balance1) {
         uint256 period = block.timestamp.sub(lastRebalance);
         lastRebalance = block.timestamp;
 
@@ -360,8 +376,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
         uint256 _streamingFee = streamingFee;
         if (_streamingFee > 0) {
-            charged0 = balance0.mul(_streamingFee).mul(period).div(86400e6);
-            charged1 = balance1.mul(_streamingFee).mul(period).div(86400e6);
+            uint256 charged0 = balance0.mul(_streamingFee).mul(period).div(86400e6);
+            uint256 charged1 = balance1.mul(_streamingFee).mul(period).div(86400e6);
 
             // Cap fees to 10%
             charged0 = Math.min(charged0, balance0.div(10));
@@ -369,8 +385,10 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
             balance0 = balance0.sub(charged0);
             balance1 = balance1.sub(charged1);
+
             fees0 = fees0.add(charged0);
             fees1 = fees1.add(charged1);
+            emit EarnProtocolFees(charged0, charged1);
         }
     }
 
@@ -435,10 +453,10 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      * all its liquidity from Uniswap.
      */
     function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
-        (uint256 base0, uint256 base1) = _positionAmounts(baseLower, baseUpper);
-        (uint256 limit0, uint256 limit1) = _positionAmounts(limitLower, limitUpper);
-        total0 = _balance0().add(base0).add(limit0);
-        total1 = _balance1().add(base1).add(limit1);
+        (uint256 baseAmount0, uint256 baseAmount1) = _positionAmounts(baseLower, baseUpper);
+        (uint256 limitAmount0, uint256 limitAmount1) = _positionAmounts(limitLower, limitUpper);
+        total0 = _balance0().add(baseAmount0).add(limitAmount0);
+        total1 = _balance1().add(baseAmount1).add(limitAmount1);
     }
 
     function _balance0() internal view returns (uint256) {

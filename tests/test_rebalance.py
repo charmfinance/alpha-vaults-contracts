@@ -78,8 +78,11 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     assert approx(ev["totalAmount0"]) == total0After
     assert approx(ev["totalAmount1"]) == total1After
     assert ev["totalSupply"] == vault.totalSupply()
-    assert approx(ev["protocolFees0"]) == charged0
-    assert approx(ev["protocolFees1"]) == charged1
+
+    assert tx.events["EarnProtocolFees"] == {
+        "protocolFees0": charged0,
+        "protocolFees1": charged1,
+    }
 
     (ev1, ev2) = tx.events["CollectFees"]
     assert (
