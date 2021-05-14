@@ -295,6 +295,10 @@ def test_cannot_make_instant_profit_around_rebalance(
     vault.rebalance({"from": gov})
     router.swap(pool, buy, qty, {"from": user})
 
+    # Poke Uniswap amounts owed to include fees
+    shares = vault.balanceOf(user)
+    vault.withdraw(shares // 2, 0, 0, user, {"from": user})
+
     # Store totals before
     total0, total1 = vault.getTotalAmounts()
 
@@ -313,5 +317,7 @@ def test_cannot_make_instant_profit_around_rebalance(
     assert not (amount0Deposit < amount0Withdraw and amount1Deposit <= amount1Withdraw)
     assert not (amount0Deposit <= amount0Withdraw and amount1Deposit < amount1Withdraw)
 
-    assert total0 <= total0After + 1
-    assert total1 <= total1After + 1
+    assert total0 <= total0After + 2
+    assert total1 <= total1After + 2
+    assert approx(total0) == total0After
+    assert approx(total1) == total1After
