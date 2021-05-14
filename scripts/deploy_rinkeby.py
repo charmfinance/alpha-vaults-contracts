@@ -12,15 +12,16 @@ BASE_THRESHOLD = 1800
 LIMIT_THRESHOLD = 600
 MAX_TWAP_DEVIATION = 100
 TWAP_DURATION = 60
-PROTOCOL_FEE = 10000
-MAX_TOTAL_SUPPLY = 1e17
+DEPOSIT_FEE = 10000
+STREAMING_FEE = 10000
+MAX_TOTAL_SUPPLY = 1e32
 
 
 def main():
     deployer = accounts.load("deployer")
 
     eth = deployer.deploy(MockToken, "ETH", "ETH", 18)
-    usdc = deployer.deploy(MockToken, "USDC", "USDC", 8)
+    usdc = deployer.deploy(MockToken, "USDC", "USDC", 6)
 
     eth.mint(deployer, 100 * 1e18, {"from": deployer})
     usdc.mint(deployer, 100000 * 1e8, {"from": deployer})
@@ -54,7 +55,8 @@ def main():
         LIMIT_THRESHOLD,
         MAX_TWAP_DEVIATION,
         TWAP_DURATION,
-        PROTOCOL_FEE,
+        DEPOSIT_FEE,
+        STREAMING_FEE,
         MAX_TOTAL_SUPPLY,
         publish_source=True,
     )
