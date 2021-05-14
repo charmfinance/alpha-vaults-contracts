@@ -46,14 +46,14 @@ interface IVault {
         uint256 amount1
     );
 
-    event Rebalance(
+    event Snapshot(
         int24 tick,
         uint256 totalAmount0,
         uint256 totalAmount1,
-        uint256 totalSupply
+        uint256 totalSupply,
+        uint256 protocolFees0,
+        uint256 protocolFees1
     );
 
-    event Collect(uint256 fees0, uint256 fees1);
-
-    event StreamingFees(uint256 protocolFees0, uint256 protocolFees1);
+    event CollectFees(uint256 fees0, uint256 fees1);
 }

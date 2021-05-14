@@ -307,16 +307,17 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         _burnAllLiquidity(baseLower, baseUpper);
         _burnAllLiquidity(limitLower, limitUpper);
 
-        _chargeStreamingFees();
+        (uint256 balance0, uint256 balance1, uint256 charged0, uint256 charged1) =
+            _chargeStreamingFees();
 
         // Emit event with useful info
-        emit Rebalance(mid, _balance0(), _balance1(), totalSupply());
+        emit Snapshot(mid, balance0, balance1, totalSupply(), charged0, charged1);
 
         // Place base order on Uniswap
-        _mintBaseOrder(midFloor, midCeil);
+        _mintBaseOrder(midFloor, midCeil, balance0, balance1);
 
         // Place limit order on Uniswap
-        _mintLimitOrder(midFloor, midCeil);
+        _mintLimitOrder(midFloor, midCeil, _balance0(), _balance1());
     }
 
     function _burnAllLiquidity(int24 tickLower, int24 tickUpper)
@@ -339,39 +340,51 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             type(uint128).max,
             type(uint128).max
         );
-        emit Collect(collect0.sub(owed0), collect1.sub(owed1));
+        emit CollectFees(collect0.sub(owed0), collect1.sub(owed1));
     }
 
-    function _chargeStreamingFees() internal {
+    function _chargeStreamingFees()
+        internal
+        returns (
+            uint256 balance0,
+            uint256 balance1,
+            uint256 charged0,
+            uint256 charged1
+        )
+    {
         uint256 period = block.timestamp.sub(lastRebalance);
         lastRebalance = block.timestamp;
 
+        balance0 = _balance0();
+        balance1 = _balance1();
+
         uint256 _streamingFee = streamingFee;
-        if (_streamingFee == 0) {
-            return;
+        if (_streamingFee > 0) {
+            charged0 = balance0.mul(_streamingFee).mul(period).div(86400e6);
+            charged1 = balance1.mul(_streamingFee).mul(period).div(86400e6);
+
+            // Cap fees to 10%
+            charged0 = Math.min(charged0, balance0.div(10));
+            charged1 = Math.min(charged1, balance1.div(10));
+
+            balance0 = balance0.sub(charged0);
+            balance1 = balance1.sub(charged1);
+            fees0 = fees0.add(charged0);
+            fees1 = fees1.add(charged1);
         }
-
-        uint256 balance0 = _balance0();
-        uint256 balance1 = _balance1();
-        uint256 charged0 = balance0.mul(_streamingFee).mul(period).div(86400e6);
-        uint256 charged1 = balance1.mul(_streamingFee).mul(period).div(86400e6);
-
-        // Cap fees to 10%
-        charged0 = Math.min(charged0, balance0.div(10));
-        charged1 = Math.min(charged1, balance1.div(10));
-        emit StreamingFees(charged0, charged1);
-
-        fees0 = fees0.add(charged0);
-        fees1 = fees1.add(charged1);
     }
 
     /// @dev Places the base order. This is an order that's symmetric around
     /// the current price.
-    function _mintBaseOrder(int24 midFloor, int24 midCeil) internal {
+    function _mintBaseOrder(
+        int24 midFloor,
+        int24 midCeil,
+        uint256 amount0,
+        uint256 amount1
+    ) internal {
         int24 tickLower = midFloor - baseThreshold;
         int24 tickUpper = midCeil + baseThreshold;
-        uint128 liquidity =
-            _liquidityForAmounts(tickLower, tickUpper, _balance0(), _balance1());
+        uint128 liquidity = _liquidityForAmounts(tickLower, tickUpper, amount0, amount1);
 
         if (liquidity > 0) {
             pool.mint(
@@ -387,10 +400,12 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /// @dev Places the limit order. This is an order that's either just above
     /// or just below the current price.
-    function _mintLimitOrder(int24 midFloor, int24 midCeil) internal {
-        uint256 amount0 = _balance0();
-        uint256 amount1 = _balance1();
-
+    function _mintLimitOrder(
+        int24 midFloor,
+        int24 midCeil,
+        uint256 amount0,
+        uint256 amount1
+    ) internal {
         (int24 bidLower, int24 bidUpper) = (midFloor - limitThreshold, midFloor);
         (int24 askLower, int24 askUpper) = (midCeil, midCeil + limitThreshold);
         uint128 bidLiquidity = _liquidityForAmounts(bidLower, bidUpper, amount0, amount1);
