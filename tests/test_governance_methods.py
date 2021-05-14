@@ -58,13 +58,21 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert tokens[0].balanceOf(recipient) - balance0 == 1e3
     assert tokens[1].balanceOf(recipient) - balance1 == 1e4 > 0
 
-    # Check setting protocol fee
+    # Check setting deposit fee
     with reverts("governance"):
-        vault.setProtocolFee(0, {"from": user})
-    with reverts("protocolFee"):
-        vault.setProtocolFee(1e6, {"from": gov})
-    vault.setProtocolFee(0, {"from": gov})
-    assert vault.protocolFee() == 0
+        vault.setDepositFee(0, {"from": user})
+    with reverts("depositFee"):
+        vault.setDepositFee(1e6, {"from": gov})
+    vault.setDepositFee(0, {"from": gov})
+    assert vault.depositFee() == 0
+
+    # Check setting streaming fee
+    with reverts("governance"):
+        vault.setStreamingFee(0, {"from": user})
+    with reverts("streamingFee"):
+        vault.setStreamingFee(1e6, {"from": gov})
+    vault.setStreamingFee(0, {"from": gov})
+    assert vault.streamingFee() == 0
 
     # Check setting max total supply
     with reverts("governance"):

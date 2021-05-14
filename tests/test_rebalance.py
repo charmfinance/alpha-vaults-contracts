@@ -19,6 +19,12 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     baseLower, baseUpper = vault.baseLower(), vault.baseUpper()
     limitLower, limitUpper = vault.limitLower(), vault.limitUpper()
 
+    # fast forward 1 hour
+    chain.sleep(3600)
+
+    # Store fees
+    fees0, fees1 = vault.fees0(), vault.fees1()
+
     # Rebalance
     tx = vault.rebalance({"from": gov})
 
@@ -65,6 +71,16 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     assert approx(ev["totalAmount0"]) == total0
     assert approx(ev["totalAmount1"]) == total1
     assert ev["totalSupply"] == vault.totalSupply()
+
+    # Check streaming fee charged
+    charged0 = vault.fees0() - fees0
+    charged1 = vault.fees1() - fees1
+    assert approx(charged0, rel=1e-3) == (total0 + charged0) * 0.02 / 24
+    assert approx(charged1, rel=1e-3) == (total1 + charged1) * 0.02 / 24
+
+    (ev,) = tx.events["StreamingFees"]
+    assert approx(ev["protocolFees0"]) == charged0
+    assert approx(ev["protocolFees1"]) == charged1
 
 
 @pytest.mark.parametrize("buy", [False, True])

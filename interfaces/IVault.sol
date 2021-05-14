@@ -33,7 +33,9 @@ interface IVault {
         address indexed to,
         uint256 shares,
         uint256 amount0,
-        uint256 amount1
+        uint256 amount1,
+        uint256 protocolFees0,
+        uint256 protocolFees1
     );
 
     event Withdraw(
@@ -50,4 +52,8 @@ interface IVault {
         uint256 totalAmount1,
         uint256 totalSupply
     );
+
+    event Collect(uint256 fees0, uint256 fees1);
+
+    event StreamingFees(uint256 protocolFees0, uint256 protocolFees1);
 }

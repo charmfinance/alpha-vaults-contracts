@@ -46,6 +46,8 @@ def test_initial_deposit(
         "shares": shares,
         "amount0": amount0,
         "amount1": amount1,
+        "protocolFees0": amount0 * 0.01,
+        "protocolFees1": amount1 * 0.01,
     }
 
 
@@ -106,6 +108,8 @@ def test_deposit(
         "shares": shares,
         "amount0": amount0,
         "amount1": amount1,
+        "protocolFees0": amount0 * 0.01,
+        "protocolFees1": amount1 * 0.01,
     }
 
 

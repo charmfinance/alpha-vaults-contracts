@@ -73,7 +73,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     int24 public limitThreshold;
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
-    uint256 public protocolFee;
+    uint256 public depositFee;
+    uint256 public streamingFee;
     uint256 public maxTotalSupply;
 
     int24 public baseLower;
@@ -82,6 +83,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     int24 public limitUpper;
     uint256 public fees0;
     uint256 public fees1;
+    uint256 public lastRebalance;
 
     address public governance;
     address public pendingGovernance;
@@ -94,7 +96,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
      * @param _limitThreshold Used to determine range of limit order
      * @param _maxTwapDeviation Max deviation from TWAP during rebalance
      * @param _twapDuration TWAP duration in seconds for rebalance check
-     * @param _protocolFee Fee on deposits expressed as multiple of 1e-6
+     * @param _depositFee Fee on deposits expressed as multiple of 1e-6
+     * @param _streamingFee Daily fee on TVL expressed as multiple of 1e-6
      * @param _maxTotalSupply Pause deposits if total supply exceeds this
      */
     constructor(
@@ -103,7 +106,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         int24 _limitThreshold,
         int24 _maxTwapDeviation,
         uint32 _twapDuration,
-        uint256 _protocolFee,
+        uint256 _depositFee,
+        uint256 _streamingFee,
         uint256 _maxTotalSupply
     ) ERC20("Alpha Vault", "AV") {
         pool = IUniswapV3Pool(_pool);
@@ -116,8 +120,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         limitThreshold = _limitThreshold;
         maxTwapDeviation = _maxTwapDeviation;
         twapDuration = _twapDuration;
-        protocolFee = _protocolFee;
+        depositFee = _depositFee;
+        streamingFee = _streamingFee;
         maxTotalSupply = _maxTotalSupply;
+
+        lastRebalance = block.timestamp;
         governance = msg.sender;
         keeper = msg.sender;
 
@@ -125,7 +132,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         _checkThreshold(_limitThreshold);
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
         require(_twapDuration > 0, "twapDuration");
-        require(_protocolFee < 1e6, "protocolFee");
+        require(_depositFee < 1e6, "depositFee");
+        require(_streamingFee < 1e6, "streamingFee");
 
         (, int24 mid, , , , , ) = pool.slot0();
         _checkMid(mid);
@@ -170,24 +178,35 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             shares = Math.max(amount0, amount1);
         } else {
             (uint256 total0, uint256 total1) = getTotalAmounts();
-            total0 = Math.max(total0, 1);
-            total1 = Math.max(total1, 1);
 
-            uint256 cross = Math.min(amount0Desired.mul(total1), amount1Desired.mul(total0));
-            amount0 = cross.div(total1).add(1); // round up
-            amount1 = cross.div(total0).add(1); // round up
-            amount0 = Math.min(amount0, amount0Desired);
-            amount1 = Math.min(amount1, amount1Desired);
+            // Calculate proportional amounts to deposit
+            if (total0 == 0) {
+                amount1 = amount1Desired;
+                shares = amount1.mul(_totalSupply).div(total1);
+            } else if (total1 == 0) {
+                amount0 = amount0Desired;
+                shares = amount0.mul(_totalSupply).div(total0);
+            } else {
+                uint256 cross =
+                    Math.min(amount0Desired.mul(total1), amount1Desired.mul(total0));
+                require(cross > 0, "cross");
 
-            shares = cross.mul(_totalSupply).div(total0).div(total1);
+                amount0 = cross.sub(1).div(total1).add(1); // round up
+                amount1 = cross.sub(1).div(total0).add(1); // round up
+                shares = cross.mul(_totalSupply).div(total0).div(total1);
+            }
         }
 
-        // Update fees
-        uint256 _protocolFee = protocolFee;
-        if (_protocolFee > 0) {
-            shares = shares.sub(shares.mul(_protocolFee).div(1e6));
-            fees0 = fees0.add(amount0.mul(_protocolFee).div(1e6));
-            fees1 = fees1.add(amount1.mul(_protocolFee).div(1e6));
+        // Update protocol fees
+        uint256 charged0;
+        uint256 charged1;
+        uint256 _depositFee = depositFee;
+        if (_depositFee > 0) {
+            shares = shares.sub(shares.mul(_depositFee).div(1e6));
+            charged0 = amount0.mul(_depositFee).div(1e6);
+            charged1 = amount1.mul(_depositFee).div(1e6);
+            fees0 = fees0.add(charged0);
+            fees1 = fees1.add(charged1);
         }
 
         require(shares > 0, "shares");
@@ -197,7 +216,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
         // Mint shares to recipient
         _mint(to, shares);
-        emit Deposit(msg.sender, to, shares, amount0, amount1);
+        emit Deposit(msg.sender, to, shares, amount0, amount1, charged0, charged1);
 
         if (amount0 > 0) token0.safeTransferFrom(msg.sender, address(this), amount0);
         if (amount1 > 0) token1.safeTransferFrom(msg.sender, address(this), amount1);
@@ -288,16 +307,16 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         _burnAllLiquidity(baseLower, baseUpper);
         _burnAllLiquidity(limitLower, limitUpper);
 
+        _chargeStreamingFees();
+
         // Emit event with useful info
-        uint256 balance0 = _balance0();
-        uint256 balance1 = _balance1();
-        emit Rebalance(mid, balance0, balance1, totalSupply());
+        emit Rebalance(mid, _balance0(), _balance1(), totalSupply());
 
         // Place base order on Uniswap
-        _mintBaseOrder(midFloor, midCeil, balance0, balance1);
+        _mintBaseOrder(midFloor, midCeil);
 
         // Place limit order on Uniswap
-        _mintLimitOrder(midFloor, midCeil, _balance0(), _balance1());
+        _mintLimitOrder(midFloor, midCeil);
     }
 
     function _burnAllLiquidity(int24 tickLower, int24 tickUpper)
@@ -313,28 +332,46 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         if (liquidity > 0) {
             (owed0, owed1) = pool.burn(tickLower, tickUpper, liquidity);
         }
-        if (owed0 > 0 || owed1 > 0) {
-            (collect0, collect1) = pool.collect(
-                address(this),
-                tickLower,
-                tickUpper,
-                type(uint128).max,
-                type(uint128).max
-            );
+        (collect0, collect1) = pool.collect(
+            address(this),
+            tickLower,
+            tickUpper,
+            type(uint128).max,
+            type(uint128).max
+        );
+        emit Collect(collect0.sub(owed0), collect1.sub(owed1));
+    }
+
+    function _chargeStreamingFees() internal {
+        uint256 period = block.timestamp.sub(lastRebalance);
+        lastRebalance = block.timestamp;
+
+        uint256 _streamingFee = streamingFee;
+        if (_streamingFee == 0) {
+            return;
         }
+
+        uint256 balance0 = _balance0();
+        uint256 balance1 = _balance1();
+        uint256 charged0 = balance0.mul(_streamingFee).mul(period).div(86400e6);
+        uint256 charged1 = balance1.mul(_streamingFee).mul(period).div(86400e6);
+
+        // Cap fees to 10%
+        charged0 = Math.min(charged0, balance0.div(10));
+        charged1 = Math.min(charged1, balance1.div(10));
+        emit StreamingFees(charged0, charged1);
+
+        fees0 = fees0.add(charged0);
+        fees1 = fees1.add(charged1);
     }
 
     /// @dev Places the base order. This is an order that's symmetric around
     /// the current price.
-    function _mintBaseOrder(
-        int24 midFloor,
-        int24 midCeil,
-        uint256 amount0,
-        uint256 amount1
-    ) internal {
+    function _mintBaseOrder(int24 midFloor, int24 midCeil) internal {
         int24 tickLower = midFloor - baseThreshold;
         int24 tickUpper = midCeil + baseThreshold;
-        uint128 liquidity = _liquidityForAmounts(tickLower, tickUpper, amount0, amount1);
+        uint128 liquidity =
+            _liquidityForAmounts(tickLower, tickUpper, _balance0(), _balance1());
 
         if (liquidity > 0) {
             pool.mint(
@@ -350,12 +387,10 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     /// @dev Places the limit order. This is an order that's either just above
     /// or just below the current price.
-    function _mintLimitOrder(
-        int24 midFloor,
-        int24 midCeil,
-        uint256 amount0,
-        uint256 amount1
-    ) internal {
+    function _mintLimitOrder(int24 midFloor, int24 midCeil) internal {
+        uint256 amount0 = _balance0();
+        uint256 amount1 = _balance1();
+
         (int24 bidLower, int24 bidUpper) = (midFloor - limitThreshold, midFloor);
         (int24 askLower, int24 askUpper) = (midCeil, midCeil + limitThreshold);
         uint128 bidLiquidity = _liquidityForAmounts(bidLower, bidUpper, amount0, amount1);
@@ -554,9 +589,15 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         twapDuration = _twapDuration;
     }
 
-    function setProtocolFee(uint256 _protocolFee) external onlyGovernance {
-        require(_protocolFee < 1e6, "protocolFee");
-        protocolFee = _protocolFee;
+    function setDepositFee(uint256 _depositFee) external onlyGovernance {
+        require(_depositFee < 1e6, "depositFee");
+        depositFee = _depositFee;
+    }
+
+    function setStreamingFee(uint256 _streamingFee) external onlyGovernance {
+        require(_streamingFee < 1e6, "streamingFee");
+        _chargeStreamingFees();
+        streamingFee = _streamingFee;
     }
 
     function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {

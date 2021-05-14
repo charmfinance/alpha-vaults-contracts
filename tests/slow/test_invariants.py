@@ -37,7 +37,8 @@ def test_deposit(
     vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setProtocolFee(0, {"from": gov})
+    vault.setDepositFee(0, {"from": gov})
+    vault.setStreamingFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -123,7 +124,8 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 ):
 
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setProtocolFee(0, {"from": gov})
+    vault.setDepositFee(0, {"from": gov})
+    vault.setStreamingFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -169,36 +171,37 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 #     buy2,
 #     qty2,
 # ):
-# 
+#
 #     # Set fee to 0 since this when an arb is most likely to work
-#     vault.setProtocolFee(0, {"from": gov})
-# 
+#     vault.setDepositFee(0, {"from": gov})
+#     vault.setStreamingFee(0, {"from": gov})
+#
 #     # Simulate deposit and random price move
 #     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
 #     vault.rebalance({"from": gov})
 #     router.swap(pool, buy, qty, {"from": user})
-# 
+#
 #     # Store initial balances
 #     balance0 = tokens[0].balanceOf(user)
 #     balance1 = tokens[1].balanceOf(user)
-# 
+#
 #     # Manipulate
 #     router.swap(pool, buy2, qty2, {"from": user})
-# 
+#
 #     # Deposit
 #     tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
 #     shares, _, _ = tx.return_value
-# 
+#
 #     # Manipulate price back
 #     router.swap(pool, not buy2, -qty2, {"from": user})
-# 
+#
 #     # Withdraw all
 #     vault.withdraw(shares, 0, 0, user, {"from": user})
 #     price = 1.0001 ** pool.slot0()[1]
-# 
+#
 #     balance0After = tokens[0].balanceOf(user)
 #     balance1After = tokens[1].balanceOf(user)
-# 
+#
 #     # Check did not make a profit
 #     value = balance0 * price + balance1
 #     valueAfter = balance0After * price + balance1After
@@ -228,7 +231,8 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
 ):
 
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setProtocolFee(0, {"from": gov})
+    vault.setDepositFee(0, {"from": gov})
+    vault.setStreamingFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -283,7 +287,8 @@ def test_cannot_make_instant_profit_around_rebalance(
 ):
 
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setProtocolFee(0, {"from": gov})
+    vault.setDepositFee(0, {"from": gov})
+    vault.setStreamingFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
