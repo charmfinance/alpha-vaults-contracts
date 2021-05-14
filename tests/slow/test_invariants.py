@@ -85,6 +85,10 @@ def test_deposit(
 def test_rebalance(
     vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
+    # Set fee to 0 since this when an arb is most likely to work
+    vault.setDepositFee(0, {"from": gov})
+    vault.setStreamingFee(0, {"from": gov})
+
     # Simulate random deposit and random price move
     vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
     vault.rebalance({"from": gov})
@@ -122,7 +126,6 @@ def test_rebalance(
 def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
-
     # Set fee to 0 since this when an arb is most likely to work
     vault.setDepositFee(0, {"from": gov})
     vault.setStreamingFee(0, {"from": gov})
@@ -171,7 +174,6 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 #     buy2,
 #     qty2,
 # ):
-#
 #     # Set fee to 0 since this when an arb is most likely to work
 #     vault.setDepositFee(0, {"from": gov})
 #     vault.setStreamingFee(0, {"from": gov})
@@ -229,7 +231,6 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     buy2,
     qty2,
 ):
-
     # Set fee to 0 since this when an arb is most likely to work
     vault.setDepositFee(0, {"from": gov})
     vault.setStreamingFee(0, {"from": gov})
@@ -285,7 +286,6 @@ def test_cannot_make_instant_profit_around_rebalance(
     buy2,
     qty2,
 ):
-
     # Set fee to 0 since this when an arb is most likely to work
     vault.setDepositFee(0, {"from": gov})
     vault.setStreamingFee(0, {"from": gov})
