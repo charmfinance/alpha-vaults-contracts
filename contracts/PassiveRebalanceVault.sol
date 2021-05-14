@@ -189,6 +189,9 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         if (amount1 > 0) token1.safeTransferFrom(msg.sender, address(this), amount1);
     }
 
+    // @dev Calculates the largest possible `amount0` and `amount1` such that
+    // they're in the same proportion as `total0` and `total1`, but not greater
+    // than `amount0Desired` and `amount1Desired` respectively.
     function _calculateDepositAmountsAndShares(uint256 amount0Desired, uint256 amount1Desired)
         internal
         view
@@ -200,16 +203,12 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     {
         uint256 totalSupply = totalSupply();
         if (totalSupply == 0) {
-            // For the first deposit, just transfer in the desired amounts
             amount0 = amount0Desired;
             amount1 = amount1Desired;
             shares = Math.max(amount0, amount1);
         } else {
             (uint256 total0, uint256 total1) = getTotalAmounts();
 
-            // Calculate the largest possible amount0 and amount1 proportional
-            // to total0 and total1, but not greater than amount0Desired and
-            // amount1Desired
             if (total0 == 0) {
                 amount1 = amount1Desired;
                 shares = amount1.mul(totalSupply).div(total1);
@@ -228,6 +227,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         }
     }
 
+    /// @dev Increases `fees0` and `fees1` with protocol fees earned from
+    /// deposit.
     function _chargeDepositFees(
         uint256 amount0,
         uint256 amount1,
@@ -235,10 +236,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
     ) internal returns (uint256) {
         uint256 _depositFee = depositFee;
         if (_depositFee > 0) {
+            // Decrease shares proportionally with amount0 and amount1
             shares = shares.sub(shares.mul(_depositFee).div(1e6));
+
             uint256 charged0 = amount0.mul(_depositFee).div(1e6);
             uint256 charged1 = amount1.mul(_depositFee).div(1e6);
-
             fees0 = fees0.add(charged0);
             fees1 = fees1.add(charged1);
             emit EarnProtocolFees(charged0, charged1);
@@ -296,21 +298,22 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         uint256 shares,
         address to
     ) internal returns (uint256 amount0, uint256 amount1) {
-        (uint128 position, , , , ) = _position(tickLower, tickUpper);
+        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
+        (uint128 position, , , , ) = pool.positions(positionKey);
         uint128 liquidity = _uint128Safe(uint256(position).mul(shares).div(totalSupply()));
 
         if (liquidity > 0) {
             (amount0, amount1) = pool.burn(tickLower, tickUpper, liquidity);
-        }
 
-        if (amount0 > 0 || amount1 > 0) {
-            (amount0, amount1) = pool.collect(
-                to,
-                tickLower,
-                tickUpper,
-                _uint128Safe(amount0),
-                _uint128Safe(amount1)
-            );
+            if (amount0 > 0 || amount1 > 0) {
+                (amount0, amount1) = pool.collect(
+                    to,
+                    tickLower,
+                    tickUpper,
+                    _uint128Safe(amount0),
+                    _uint128Safe(amount1)
+                );
+            }
         }
     }
 
@@ -353,7 +356,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             uint256 collect1
         )
     {
-        (uint128 liquidity, , , , ) = _position(tickLower, tickUpper);
+        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
+        (uint128 liquidity, , , , ) = pool.positions(positionKey);
         if (liquidity > 0) {
             (owed0, owed1) = pool.burn(tickLower, tickUpper, liquidity);
         }
@@ -367,6 +371,8 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         emit CollectFees(collect0.sub(owed0), collect1.sub(owed1));
     }
 
+    /// @dev Increases `fees0` and `fees1` with protocol fees earned since last
+    /// called.
     function _chargeStreamingFees() internal returns (uint256 balance0, uint256 balance1) {
         uint256 period = block.timestamp.sub(lastRebalance);
         lastRebalance = block.timestamp;
@@ -498,21 +504,6 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             if (amount0 > 0) token0.safeTransferFrom(payer, msg.sender, amount0);
             if (amount1 > 0) token1.safeTransferFrom(payer, msg.sender, amount1);
         }
-    }
-
-    function _position(int24 tickLower, int24 tickUpper)
-        internal
-        view
-        returns (
-            uint128,
-            uint256,
-            uint256,
-            uint128,
-            uint128
-        )
-    {
-        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
-        return pool.positions(positionKey);
     }
 
     function _amountsForLiquidity(
