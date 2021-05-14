@@ -4,12 +4,16 @@ This repository contains the smart contracts for the Alpha Vaults protocol.
 
 ### Usage
 
-Before compiling, run below. The uniswap-v3-periphery has to be cloned otherwise
-the naming in Brownie clashes with uniswap-v3-core.
+Before compiling, run below. The uniswap-v3-periphery package has to be cloned
+otherwise imports don't work.
 
 `brownie pm clone Uniswap/uniswap-v3-periphery@1.0.0`
 
-Run tests
+Run tests excluding slow property-based tests
+
+`brownie test --ignore=tests/slow`
+
+Run all tests
 
 `brownie test`
 
