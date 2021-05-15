@@ -135,6 +135,9 @@ def test_deposit_when_vault_only_has_token0(
 ):
     vault = vaultOnlyWithToken0
 
+    # Poke fees
+    vault.withdraw(vault.balanceOf(gov) // 2, 0, 0, gov, {"from": gov})
+
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
@@ -185,6 +188,9 @@ def test_deposit_when_vault_only_has_token1(
     amount1Desired,
 ):
     vault = vaultOnlyWithToken1
+
+    # Poke fees
+    vault.withdraw(vault.balanceOf(gov) // 2, 0, 0, gov, {"from": gov})
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(user)

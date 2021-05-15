@@ -62,7 +62,14 @@ import "../interfaces/IVault.sol";
  *          achieves this without the need to swap directly on Uniswap and pay
  *          fees.
  */
-contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, Multicall, ERC20, ReentrancyGuard, SelfPermit {
+contract PassiveRebalanceVault is
+    IVault,
+    IUniswapV3MintCallback,
+    Multicall,
+    ERC20,
+    ReentrancyGuard,
+    SelfPermit
+{
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
@@ -482,9 +489,13 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, Multicall, ERC
         return token1.balanceOf(address(this)).sub(fees1);
     }
 
-    function _positionLiquidity(int24 tickLower, int24 tickUpper) internal view returns (uint128 liquidity) {
+    function _positionLiquidity(int24 tickLower, int24 tickUpper)
+        internal
+        view
+        returns (uint128 liquidity)
+    {
         bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
-        (uint128 liquidity, , , , ) = pool.positions(positionKey);
+        (liquidity, , , , ) = pool.positions(positionKey);
     }
 
     /// @dev Calculates amounts of token0 and token1 held in a position.
