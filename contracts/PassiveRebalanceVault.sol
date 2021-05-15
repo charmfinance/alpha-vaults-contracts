@@ -169,6 +169,14 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         require(amount0Desired > 0 || amount1Desired > 0, "amounts");
         require(to != address(0), "to");
 
+        // Burn 0 liquidity to trigger update of fees earned
+        if (_positionLiquidity(baseLower, baseUpper) > 0) {
+            pool.burn(baseLower, baseUpper, 0);
+        }
+        if (_positionLiquidity(limitLower, limitUpper) > 0) {
+            pool.burn(limitLower, limitUpper, 0);
+        }
+
         (amount0, amount1, shares) = _calculateDepositAmountsAndShares(
             amount0Desired,
             amount1Desired
@@ -298,8 +306,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
         uint256 shares,
         address to
     ) internal returns (uint256 amount0, uint256 amount1) {
-        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
-        (uint128 position, , , , ) = pool.positions(positionKey);
+        uint256 position = uint256(_positionLiquidity(tickLower, tickUpper));
         uint128 liquidity = _uint128Safe(uint256(position).mul(shares).div(totalSupply()));
 
         if (liquidity > 0) {
@@ -356,8 +363,7 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
             uint256 collect1
         )
     {
-        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
-        (uint128 liquidity, , , , ) = pool.positions(positionKey);
+        uint128 liquidity = _positionLiquidity(tickLower, tickUpper);
         if (liquidity > 0) {
             (owed0, owed1) = pool.burn(tickLower, tickUpper, liquidity);
         }
@@ -471,6 +477,11 @@ contract PassiveRebalanceVault is IVault, IUniswapV3MintCallback, ERC20, Reentra
 
     function _balance1() internal view returns (uint256) {
         return token1.balanceOf(address(this)).sub(fees1);
+    }
+
+    function _positionLiquidity(int24 tickLower, int24 tickUpper) internal view returns (uint128 liquidity) {
+        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
+        (uint128 liquidity, , , , ) = pool.positions(positionKey);
     }
 
     /// @dev Calculates amounts of token0 and token1 held in a position.
