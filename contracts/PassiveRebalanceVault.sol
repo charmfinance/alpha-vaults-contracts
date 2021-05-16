@@ -93,6 +93,7 @@ contract PassiveRebalanceVault is
     int24 public limitUpper;
     uint256 public fees0;
     uint256 public fees1;
+    int24 public lastMid;
     uint256 public lastRebalance;
 
     address public governance;
@@ -145,12 +146,14 @@ contract PassiveRebalanceVault is
         require(_depositFee < 1e6, "depositFee");
         require(_streamingFee < 1e6, "streamingFee");
 
-        (, int24 mid, , , , , ) = pool.slot0();
-        _checkMid(mid);
+        (, lastMid, , , , , ) = pool.slot0();
+        _checkMid(lastMid);
     }
 
     /**
      * @notice Deposit tokens in proportion to the vault's holdings.
+     * @dev Note it's not possible for the user to manipulate price to deposit
+     * cheaper, as the value of the range orders would always be increased.
      * @param amount0Desired Max amount of token0 deposited
      * @param amount1Desired Max amount of token1 deposited
      * @param amount0Min Revert if resulting `amount0` is less than this
@@ -179,7 +182,7 @@ contract PassiveRebalanceVault is
         require(amount0Desired > 0 || amount1Desired > 0, "amounts");
         require(to != address(0), "to");
 
-        // Burn 0 liquidity to trigger update of fees earned
+        // Do a zero-burn to poke the Uniswap pool so it updates fees earned
         if (_positionLiquidity(baseLower, baseUpper) > 0) {
             pool.burn(baseLower, baseUpper, 0);
         }
@@ -187,7 +190,7 @@ contract PassiveRebalanceVault is
             pool.burn(limitLower, limitUpper, 0);
         }
 
-        (amount0, amount1, shares) = _calculateDepositAmountsAndShares(
+        (shares, amount0, amount1) = _calcSharesAndAmounts(
             amount0Desired,
             amount1Desired
         );
@@ -210,38 +213,36 @@ contract PassiveRebalanceVault is
     // @dev Calculates the largest possible `amount0` and `amount1` such that
     // they're in the same proportion as `total0` and `total1`, but not greater
     // than `amount0Desired` and `amount1Desired` respectively.
-    function _calculateDepositAmountsAndShares(uint256 amount0Desired, uint256 amount1Desired)
+    function _calcSharesAndAmounts(uint256 amount0Desired, uint256 amount1Desired)
         internal
         view
         returns (
+            uint256 shares,
             uint256 amount0,
-            uint256 amount1,
-            uint256 shares
+            uint256 amount1
         )
     {
         uint256 totalSupply = totalSupply();
+        (uint256 total0, uint256 total1) = getTotalAmounts();
         if (totalSupply == 0) {
+            // For first deposit, just use the input amounts desired
             amount0 = amount0Desired;
             amount1 = amount1Desired;
             shares = Math.max(amount0, amount1);
+        } else if (total0 == 0) {
+            amount1 = amount1Desired;
+            shares = amount1.mul(totalSupply).div(total1);
+        } else if (total1 == 0) {
+            amount0 = amount0Desired;
+            shares = amount0.mul(totalSupply).div(total0);
         } else {
-            (uint256 total0, uint256 total1) = getTotalAmounts();
+            uint256 cross =
+                Math.min(amount0Desired.mul(total1), amount1Desired.mul(total0));
+            require(cross > 0, "cross");
 
-            if (total0 == 0) {
-                amount1 = amount1Desired;
-                shares = amount1.mul(totalSupply).div(total1);
-            } else if (total1 == 0) {
-                amount0 = amount0Desired;
-                shares = amount0.mul(totalSupply).div(total0);
-            } else {
-                uint256 cross =
-                    Math.min(amount0Desired.mul(total1), amount1Desired.mul(total0));
-                require(cross > 0, "cross");
-
-                amount0 = cross.sub(1).div(total1).add(1); // round up
-                amount1 = cross.sub(1).div(total0).add(1); // round up
-                shares = cross.mul(totalSupply).div(total0).div(total1);
-            }
+            amount0 = cross.sub(1).div(total1).add(1); // round up
+            amount1 = cross.sub(1).div(total0).add(1); // round up
+            shares = cross.mul(totalSupply).div(total0).div(total1);
         }
     }
 
@@ -284,12 +285,14 @@ contract PassiveRebalanceVault is
         require(shares > 0, "shares");
         require(to != address(0), "to");
 
+        // Withdraw proportion of liquidity from Uniswap pool and send
+        // resulting tokens to recipient directly
         (uint256 baseAmount0, uint256 baseAmount1) =
             _burnLiquidityShare(baseLower, baseUpper, shares, to);
         (uint256 limitAmount0, uint256 limitAmount1) =
             _burnLiquidityShare(limitLower, limitUpper, shares, to);
 
-        // Transfer out tokens proportional to unused balances
+        // Also transfer tokens proportional to unused balances
         uint256 totalSupply = totalSupply();
         uint256 unusedAmount0 = _balance0().mul(shares).div(totalSupply);
         uint256 unusedAmount1 = _balance1().mul(shares).div(totalSupply);
@@ -299,7 +302,6 @@ contract PassiveRebalanceVault is
         // Sum up total amounts sent to recipient
         amount0 = baseAmount0.add(limitAmount0).add(unusedAmount0);
         amount1 = baseAmount1.add(limitAmount1).add(unusedAmount1);
-
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
 
@@ -317,7 +319,7 @@ contract PassiveRebalanceVault is
         address to
     ) internal returns (uint256 amount0, uint256 amount1) {
         uint256 position = uint256(_positionLiquidity(tickLower, tickUpper));
-        uint128 liquidity = _uint128Safe(uint256(position).mul(shares).div(totalSupply()));
+        uint128 liquidity = _toUint128(position.mul(shares).div(totalSupply()));
 
         if (liquidity > 0) {
             (amount0, amount1) = pool.burn(tickLower, tickUpper, liquidity);
@@ -327,8 +329,8 @@ contract PassiveRebalanceVault is
                     to,
                     tickLower,
                     tickUpper,
-                    _uint128Safe(amount0),
-                    _uint128Safe(amount1)
+                    _toUint128(amount0),
+                    _toUint128(amount1)
                 );
             }
         }
@@ -344,6 +346,7 @@ contract PassiveRebalanceVault is
 
         (, int24 mid, , , , , ) = pool.slot0();
         _checkMid(mid);
+        lastMid = mid;
 
         int24 midFloor = _floor(mid);
         int24 midCeil = midFloor + tickSpacing;
@@ -352,6 +355,7 @@ contract PassiveRebalanceVault is
         _burnAllLiquidity(baseLower, baseUpper);
         _burnAllLiquidity(limitLower, limitUpper);
 
+        // Charge streaming fees
         (uint256 balance0, uint256 balance1) = _chargeStreamingFees();
 
         // Emit event with useful info
@@ -360,7 +364,7 @@ contract PassiveRebalanceVault is
         // Place base order on Uniswap
         _mintBaseOrder(midFloor, midCeil, balance0, balance1);
 
-        // Place limit order on Uniswap
+        // Place limit order on Uniswap with updated balances
         _mintLimitOrder(midFloor, midCeil, _balance0(), _balance1());
     }
 
@@ -452,10 +456,10 @@ contract PassiveRebalanceVault is
         uint128 askLiquidity = _liquidityForAmounts(askLower, askUpper, amount0, amount1);
 
         // Choose the range on which more liquidity can be placed
-        bool bid = bidLiquidity > askLiquidity;
-        int24 tickLower = bid ? bidLower : askLower;
-        int24 tickUpper = bid ? bidUpper : askUpper;
-        uint128 liquidity = bid ? bidLiquidity : askLiquidity;
+        bool placeBid = bidLiquidity > askLiquidity;
+        int24 tickLower = placeBid ? bidLower : askLower;
+        int24 tickUpper = placeBid ? bidUpper : askUpper;
+        uint128 liquidity = placeBid ? bidLiquidity : askLiquidity;
 
         if (liquidity > 0) {
             pool.mint(
@@ -489,6 +493,7 @@ contract PassiveRebalanceVault is
         return token1.balanceOf(address(this)).sub(fees1);
     }
 
+    /// @dev Calculates amount of liquidity in vault's position.
     function _positionLiquidity(int24 tickLower, int24 tickUpper)
         internal
         view
@@ -498,7 +503,7 @@ contract PassiveRebalanceVault is
         (liquidity, , , , ) = pool.positions(positionKey);
     }
 
-    /// @dev Calculates amounts of token0 and token1 held in a position.
+    /// @dev Calculates amounts of token0 and token1 held in vault's position.
     function _positionAmounts(int24 tickLower, int24 tickUpper)
         internal
         view
@@ -592,7 +597,7 @@ contract PassiveRebalanceVault is
         return compressed * tickSpacing;
     }
 
-    function _uint128Safe(uint256 x) internal pure returns (uint128) {
+    function _toUint128(uint256 x) internal pure returns (uint128) {
         assert(x <= type(uint128).max);
         return uint128(x);
     }
