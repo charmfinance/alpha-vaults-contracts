@@ -94,15 +94,24 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     with reverts("finalized"):
         vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e8, {"from": gov})
 
+    # Check setting fee recipient
+    with reverts("governance"):
+        vault.setFeeRecipient(recipient, {"from": user})
+    assert vault.feeRecipient() != recipient
+    vault.setFeeRecipient(recipient, {"from": gov})
+    assert vault.feeRecipient() == recipient
+
     # Check setting keeper
     with reverts("governance"):
         vault.setKeeper(recipient, {"from": user})
+    assert vault.keeper() != recipient
     vault.setKeeper(recipient, {"from": gov})
     assert vault.keeper() == recipient
 
     # Check setting governance
     with reverts("governance"):
         vault.setGovernance(recipient, {"from": user})
+    assert vault.pendingGovernance() != recipient
     vault.setGovernance(recipient, {"from": gov})
     assert vault.pendingGovernance() == recipient
 

@@ -607,6 +607,10 @@ contract PassiveRebalanceVault is
         maxTotalSupply = _maxTotalSupply;
     }
 
+    function setFeeRecipient(address _feeRecipient) external onlyGovernance {
+        feeRecipient = _feeRecipient;
+    }
+
     function setKeeper(address _keeper) external onlyGovernance {
         keeper = _keeper;
     }
