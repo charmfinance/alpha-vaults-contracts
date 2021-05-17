@@ -36,9 +36,6 @@ def test_initial_deposit(
     assert amount0 == balance0 - tokens[0].balanceOf(user)
     assert amount1 == balance1 - tokens[1].balanceOf(user)
 
-    # Check vault updates fees correctly
-    assert approx(vault.balanceOf(gov)) == (shares + vault.balanceOf(gov)) / 100
-
     # Check event
     assert tx.events["Deposit"] == {
         "sender": user,
@@ -46,7 +43,6 @@ def test_initial_deposit(
         "shares": shares,
         "amount0": amount0,
         "amount1": amount1,
-        "sharesToProtocol": vault.balanceOf(gov),
     }
 
 
@@ -98,10 +94,6 @@ def test_deposit(
     assert approx(total0 * totalSupplyAfter) == total0After * totalSupply
     assert approx(total1 * totalSupplyAfter) == total1After * totalSupply
 
-    # Check vault updates fees correctly
-    sharesToProtocol = vault.balanceOf(gov) - govShares
-    assert approx(sharesToProtocol) == (shares + sharesToProtocol) / 100
-
     # Check event
     assert tx.events["Deposit"] == {
         "sender": user,
@@ -109,7 +101,6 @@ def test_deposit(
         "shares": shares,
         "amount0": amount0,
         "amount1": amount1,
-        "sharesToProtocol": sharesToProtocol,
     }
 
 

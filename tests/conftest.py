@@ -80,7 +80,7 @@ def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
     # protocolFee = 10000 (1%)
     # maxTotalSupply = 100e18 (100 tokens)
     vault = gov.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 10000, 20000, 100e18
+        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 10000, 100e18
     )
 
     for u in users:

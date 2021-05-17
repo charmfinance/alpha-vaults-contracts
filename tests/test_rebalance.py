@@ -64,11 +64,8 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
         assert rebalance[0] > 0
 
     # Check no tokens left unused. Only small amount left due to rounding
-    assert tokens[0].balanceOf(vault) < 1000
-    assert tokens[1].balanceOf(vault) < 1000
-
-    # Check streaming fee charged
-    assert approx(vault.balanceOf(gov) - govShares, rel=1e-3) == totalSupply * 0.02 / 24
+    assert tokens[0].balanceOf(vault) - vault.protocolFees0() < 1000
+    assert tokens[1].balanceOf(vault) - vault.protocolFees1() < 1000
 
     # Check event
     total0After, total1After = vault.getTotalAmounts()
@@ -77,11 +74,20 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     assert approx(ev["totalAmount0"]) == total0After
     assert approx(ev["totalAmount1"]) == total1After
     assert ev["totalSupply"] == vault.totalSupply()
-    assert ev["sharesToProtocol"] == vault.balanceOf(gov) - govShares
 
     (ev1, ev2) = tx.events["CollectFees"]
-    assert approx(ev1["fees0"] + ev2["fees0"], rel=1e-6, abs=1) == total0After - total0
-    assert approx(ev1["fees1"] + ev2["fees1"], rel=1e-6, abs=1) == total1After - total1
+    dtotal0 = total0After - total0 + ev1["protocolFees0"] + ev2["protocolFees0"]
+    dtotal1 = total1After - total1 + ev1["protocolFees1"] + ev2["protocolFees1"]
+    assert approx(ev1["fees0"] + ev2["fees0"], rel=1e-6, abs=1) == dtotal0
+    assert (
+        approx(ev1["protocolFees0"] + ev2["protocolFees0"], rel=1e-6, abs=1)
+        == dtotal0 * 0.01
+    )
+    assert approx(ev1["fees1"] + ev2["fees1"], rel=1e-6, abs=1) == dtotal1
+    assert (
+        approx(ev1["protocolFees1"] + ev2["protocolFees1"], rel=1e-6, abs=1)
+        == dtotal1 * 0.01
+    )
 
 
 @pytest.mark.parametrize("buy", [False, True])

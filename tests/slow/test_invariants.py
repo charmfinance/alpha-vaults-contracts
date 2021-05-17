@@ -37,8 +37,7 @@ def test_deposit(
     vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setDepositFee(0, {"from": gov})
-    vault.setStreamingFee(0, {"from": gov})
+    vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -90,8 +89,7 @@ def test_rebalance(
     vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setDepositFee(0, {"from": gov})
-    vault.setStreamingFee(0, {"from": gov})
+    vault.setProtocolFee(0, {"from": gov})
 
     # Simulate random deposit and random price move
     vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
@@ -111,8 +109,8 @@ def test_rebalance(
     vault.rebalance({"from": gov})
 
     # Check leftover balances is low
-    assert tokens[0].balanceOf(vault) < 10000
-    assert tokens[1].balanceOf(vault) < 10000
+    assert tokens[0].balanceOf(vault) - vault.protocolFees0() < 10000
+    assert tokens[1].balanceOf(vault) - vault.protocolFees1() < 10000
 
     # Check total amounts haven't changed
     newTotal0, newTotal1 = vault.getTotalAmounts()
@@ -131,8 +129,7 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
 ):
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setDepositFee(0, {"from": gov})
-    vault.setStreamingFee(0, {"from": gov})
+    vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -179,8 +176,7 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 #     qty2,
 # ):
 #     # Set fee to 0 since this when an arb is most likely to work
-#     vault.setDepositFee(0, {"from": gov})
-#     vault.setStreamingFee(0, {"from": gov})
+#     vault.setProtocolFee(0, {"from": gov})
 #
 #     # Simulate deposit and random price move
 #     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -236,8 +232,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     qty2,
 ):
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setDepositFee(0, {"from": gov})
-    vault.setStreamingFee(0, {"from": gov})
+    vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
@@ -291,8 +286,7 @@ def test_cannot_make_instant_profit_around_rebalance(
     qty2,
 ):
     # Set fee to 0 since this when an arb is most likely to work
-    vault.setDepositFee(0, {"from": gov})
-    vault.setStreamingFee(0, {"from": gov})
+    vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})

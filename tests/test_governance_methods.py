@@ -41,21 +41,13 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     vault.setTwapDuration(800, {"from": gov})
     assert vault.twapDuration() == 800
 
-    # Check setting deposit fee
+    # Check setting protocol fee
     with reverts("governance"):
-        vault.setDepositFee(0, {"from": user})
-    with reverts("depositFee"):
-        vault.setDepositFee(1e6, {"from": gov})
-    vault.setDepositFee(0, {"from": gov})
-    assert vault.depositFee() == 0
-
-    # Check setting streaming fee
-    with reverts("governance"):
-        vault.setStreamingFee(0, {"from": user})
-    with reverts("streamingFee"):
-        vault.setStreamingFee(1e6, {"from": gov})
-    vault.setStreamingFee(0, {"from": gov})
-    assert vault.streamingFee() == 0
+        vault.setProtocolFee(0, {"from": user})
+    with reverts("protocolFee"):
+        vault.setProtocolFee(1e6, {"from": gov})
+    vault.setProtocolFee(0, {"from": gov})
+    assert vault.protocolFee() == 0
 
     # Check setting max total supply
     with reverts("governance"):
@@ -94,13 +86,6 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     with reverts("finalized"):
         vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e8, {"from": gov})
 
-    # Check setting fee recipient
-    with reverts("governance"):
-        vault.setFeeRecipient(recipient, {"from": user})
-    assert vault.feeRecipient() != recipient
-    vault.setFeeRecipient(recipient, {"from": gov})
-    assert vault.feeRecipient() == recipient
-
     # Check setting keeper
     with reverts("governance"):
         vault.setKeeper(recipient, {"from": user})
@@ -121,3 +106,28 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     assert vault.governance() != recipient
     vault.acceptGovernance({"from": recipient})
     assert vault.governance() == recipient
+
+
+def test_collect_protocol_fees(pool, vault, router, tokens, gov, user, recipient):
+    vault.setMaxTwapDeviation(1 << 20, {"from": gov})
+    vault.deposit(1e18, 1e20, 0, 0, gov, {"from": gov})
+    tx = vault.rebalance({"from": gov})
+
+    router.swap(pool, True, 1e16, {"from": gov})
+    router.swap(pool, False, 1e18, {"from": gov})
+    tx = vault.rebalance({"from": gov})
+    protocolFees0, protocolFees1 = vault.protocolFees0(), vault.protocolFees1()
+
+    balance0 = tokens[0].balanceOf(recipient)
+    balance1 = tokens[1].balanceOf(recipient)
+    with reverts("governance"):
+        vault.collectProtocol(1e3, 1e4, recipient, {"from": user})
+    with reverts("SafeMath: subtraction overflow"):
+        vault.collectProtocol(1e18, 1e4, recipient, {"from": gov})
+    with reverts("SafeMath: subtraction overflow"):
+        vault.collectProtocol(1e3, 1e18, recipient, {"from": gov})
+    vault.collectProtocol(1e3, 1e4, recipient, {"from": gov})
+    assert vault.protocolFees0() == protocolFees0 - 1e3
+    assert vault.protocolFees1() == protocolFees1 - 1e4
+    assert tokens[0].balanceOf(recipient) - balance0 == 1e3
+    assert tokens[1].balanceOf(recipient) - balance1 == 1e4 > 0

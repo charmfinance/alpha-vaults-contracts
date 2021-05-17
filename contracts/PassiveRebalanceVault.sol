@@ -83,8 +83,7 @@ contract PassiveRebalanceVault is
     int24 public limitThreshold;
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
-    uint256 public depositFee;
-    uint256 public streamingFee;
+    uint256 public protocolFee;
     uint256 public maxTotalSupply;
 
     int24 public baseLower;
@@ -93,11 +92,12 @@ contract PassiveRebalanceVault is
     int24 public limitUpper;
     int24 public lastMid;
     uint256 public lastRebalance;
+    uint256 public protocolFees0;
+    uint256 public protocolFees1;
 
     address public governance;
     address public pendingGovernance;
     bool public finalized;
-    address public feeRecipient;
     address public keeper;
 
     /**
@@ -106,8 +106,7 @@ contract PassiveRebalanceVault is
      * @param _limitThreshold Used to determine range of limit order
      * @param _maxTwapDeviation Max deviation from TWAP during rebalance
      * @param _twapDuration TWAP duration in seconds for rebalance check
-     * @param _depositFee Fee on deposits expressed as multiple of 1e-6
-     * @param _streamingFee Daily fee on TVL expressed as multiple of 1e-6
+     * @param _protocolFee Fee on deposits expressed as multiple of 1e-6
      * @param _maxTotalSupply Pause deposits if total supply exceeds this
      */
     constructor(
@@ -116,8 +115,7 @@ contract PassiveRebalanceVault is
         int24 _limitThreshold,
         int24 _maxTwapDeviation,
         uint32 _twapDuration,
-        uint256 _depositFee,
-        uint256 _streamingFee,
+        uint256 _protocolFee,
         uint256 _maxTotalSupply
     ) ERC20("Alpha Vault", "AV") {
         pool = IUniswapV3Pool(_pool);
@@ -130,21 +128,18 @@ contract PassiveRebalanceVault is
         limitThreshold = _limitThreshold;
         maxTwapDeviation = _maxTwapDeviation;
         twapDuration = _twapDuration;
-        depositFee = _depositFee;
-        streamingFee = _streamingFee;
+        protocolFee = _protocolFee;
         maxTotalSupply = _maxTotalSupply;
 
         lastRebalance = block.timestamp;
         governance = msg.sender;
-        feeRecipient = msg.sender;
         keeper = msg.sender;
 
         _checkThreshold(_baseThreshold);
         _checkThreshold(_limitThreshold);
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
         require(_twapDuration > 0, "twapDuration");
-        require(_depositFee < 1e6, "depositFee");
-        require(_streamingFee < 1e6, "streamingFee");
+        require(_protocolFee < 1e6, "protocolFee");
 
         (, lastMid, , , , , ) = pool.slot0();
         _checkMid(lastMid);
@@ -191,21 +186,13 @@ contract PassiveRebalanceVault is
         }
 
         (shares, amount0, amount1) = _calcSharesAndAmounts(amount0Desired, amount1Desired);
+        require(shares > 0, "shares");
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
 
-        uint256 _depositFee = depositFee;
-        uint256 sharesToProtocol;
-        if (_depositFee > 0) {
-            sharesToProtocol = shares.mul(depositFee).div(1e6);
-            shares = shares.sub(sharesToProtocol);
-            _mint(feeRecipient, sharesToProtocol);
-        }
-        require(shares > 0, "shares");
-
         // Mint shares to recipient
         _mint(to, shares);
-        emit Deposit(msg.sender, to, shares, amount0, amount1, sharesToProtocol);
+        emit Deposit(msg.sender, to, shares, amount0, amount1);
         require(totalSupply() <= maxTotalSupply, "maxTotalSupply");
 
         // Transfer in tokens from sender
@@ -275,8 +262,8 @@ contract PassiveRebalanceVault is
 
         // Also transfer tokens proportional to unused balances
         uint256 totalSupply = totalSupply();
-        uint256 unusedAmount0 = token0.balanceOf(address(this)).mul(shares).div(totalSupply);
-        uint256 unusedAmount1 = token1.balanceOf(address(this)).mul(shares).div(totalSupply);
+        uint256 unusedAmount0 = _balance0().mul(shares).div(totalSupply);
+        uint256 unusedAmount1 = _balance1().mul(shares).div(totalSupply);
         if (unusedAmount0 > 0) token0.safeTransfer(to, unusedAmount0);
         if (unusedAmount1 > 0) token1.safeTransfer(to, unusedAmount1);
 
@@ -336,21 +323,16 @@ contract PassiveRebalanceVault is
         _burnAllLiquidity(baseLower, baseUpper);
         _burnAllLiquidity(limitLower, limitUpper);
 
-        // Charge streaming fees
-        uint256 sharesToProtocol = _chargeStreamingFees();
-
         // Emit event with useful info
-        uint256 balance0 = token0.balanceOf(address(this));
-        uint256 balance1 = token1.balanceOf(address(this));
-        emit Snapshot(mid, balance0, balance1, totalSupply(), sharesToProtocol);
+        uint256 balance0 = _balance0();
+        uint256 balance1 = _balance1();
+        emit Snapshot(mid, balance0, balance1, totalSupply());
 
         // Place base order on Uniswap
         _mintBaseOrder(midFloor, midCeil, balance0, balance1);
 
         // Place limit order on Uniswap with updated balances
-        balance0 = token0.balanceOf(address(this));
-        balance1 = token1.balanceOf(address(this));
-        _mintLimitOrder(midFloor, midCeil, balance0, balance1);
+        _mintLimitOrder(midFloor, midCeil, _balance0(), _balance1());
     }
 
     function _burnAllLiquidity(int24 tickLower, int24 tickUpper)
@@ -373,17 +355,16 @@ contract PassiveRebalanceVault is
             type(uint128).max,
             type(uint128).max
         );
-        emit CollectFees(collect0.sub(owed0), collect1.sub(owed1));
-    }
+        uint256 fees0 = collect0.sub(owed0);
+        uint256 fees1 = collect1.sub(owed1);
 
-    function _chargeStreamingFees() internal returns (uint256 sharesToProtocol) {
-        uint256 _streamingFee = streamingFee;
-        if (_streamingFee > 0) {
-            uint256 period = block.timestamp.sub(lastRebalance);
-            sharesToProtocol = totalSupply().mul(_streamingFee).mul(period).div(86400e6);
-            _mint(feeRecipient, sharesToProtocol);
-        }
-        lastRebalance = block.timestamp;
+        uint256 _protocolFee = protocolFee;
+        uint256 _protocolFees0 = fees0.mul(_protocolFee).div(1e6);
+        uint256 _protocolFees1 = fees1.mul(_protocolFee).div(1e6);
+
+        protocolFees0 = protocolFees0.add(_protocolFees0);
+        protocolFees1 = protocolFees1.add(_protocolFees1);
+        emit CollectFees(fees0, fees1, _protocolFees0, _protocolFees1);
     }
 
     /// @dev Places the base order. This is an order that's symmetric around
@@ -449,8 +430,8 @@ contract PassiveRebalanceVault is
     function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
         (uint256 baseAmount0, uint256 baseAmount1) = _positionAmounts(baseLower, baseUpper);
         (uint256 limitAmount0, uint256 limitAmount1) = _positionAmounts(limitLower, limitUpper);
-        total0 = token0.balanceOf(address(this)).add(baseAmount0).add(limitAmount0);
-        total1 = token1.balanceOf(address(this)).add(baseAmount1).add(limitAmount1);
+        total0 = _balance0().add(baseAmount0).add(limitAmount0);
+        total1 = _balance1().add(baseAmount1).add(limitAmount1);
     }
 
     /// @dev Calculates amount of liquidity in vault's position.
@@ -476,6 +457,14 @@ contract PassiveRebalanceVault is
         (amount0, amount1) = _amountsForLiquidity(tickLower, tickUpper, liquidity);
         amount0 = amount0.add(uint256(tokensOwed0));
         amount1 = amount1.add(uint256(tokensOwed1));
+    }
+
+    function _balance0() internal view returns (uint256) {
+        return token0.balanceOf(address(this)).sub(protocolFees0);
+    }
+
+    function _balance1() internal view returns (uint256) {
+        return token1.balanceOf(address(this)).sub(protocolFees1);
     }
 
     /// @dev Callback for Uniswap V3 pool.
@@ -572,6 +561,17 @@ contract PassiveRebalanceVault is
         return int24((tickCumulatives[1] - tickCumulatives[0]) / _twapDuration);
     }
 
+    function collectProtocol(
+        uint256 amount0,
+        uint256 amount1,
+        address to
+    ) external onlyGovernance {
+        protocolFees0 = protocolFees0.sub(amount0);
+        protocolFees1 = protocolFees1.sub(amount1);
+        if (amount0 > 0) token0.safeTransfer(to, amount0);
+        if (amount1 > 0) token1.safeTransfer(to, amount1);
+    }
+
     function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {
         _checkThreshold(_baseThreshold);
         baseThreshold = _baseThreshold;
@@ -592,23 +592,13 @@ contract PassiveRebalanceVault is
         twapDuration = _twapDuration;
     }
 
-    function setDepositFee(uint256 _depositFee) external onlyGovernance {
-        require(_depositFee < 1e6, "depositFee");
-        depositFee = _depositFee;
-    }
-
-    function setStreamingFee(uint256 _streamingFee) external onlyGovernance {
-        require(_streamingFee < 1e6, "streamingFee");
-        _chargeStreamingFees();
-        streamingFee = _streamingFee;
+    function setProtocolFee(uint256 _protocolFee) external onlyGovernance {
+        require(_protocolFee < 1e6, "protocolFee");
+        protocolFee = _protocolFee;
     }
 
     function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {
         maxTotalSupply = _maxTotalSupply;
-    }
-
-    function setFeeRecipient(address _feeRecipient) external onlyGovernance {
-        feeRecipient = _feeRecipient;
     }
 
     function setKeeper(address _keeper) external onlyGovernance {
