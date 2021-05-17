@@ -45,6 +45,10 @@ def test_deposit(
     vault.rebalance({"from": gov})
     router.swap(pool, buy, qty, {"from": user})
 
+    # Poke Uniswap amounts owed to include fees
+    shares = vault.balanceOf(user)
+    vault.withdraw(shares // 2, 0, 0, user, {"from": user})
+
     # Store totals
     total0, total1 = vault.getTotalAmounts()
     totalSupply = vault.totalSupply()
@@ -107,8 +111,8 @@ def test_rebalance(
     vault.rebalance({"from": gov})
 
     # Check leftover balances is low
-    assert tokens[0].balanceOf(vault) - vault.fees0() < 10000
-    assert tokens[1].balanceOf(vault) - vault.fees1() < 10000
+    assert tokens[0].balanceOf(vault) < 10000
+    assert tokens[1].balanceOf(vault) < 10000
 
     # Check total amounts haven't changed
     newTotal0, newTotal1 = vault.getTotalAmounts()
