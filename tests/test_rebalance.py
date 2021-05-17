@@ -50,6 +50,7 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     else:
         assert vault.limitLower() == tickFloor - 1200
         assert vault.limitUpper() == tickFloor
+    assert vault.lastMid() == tick
 
     base, rebalance = getPositions(vault)
 
