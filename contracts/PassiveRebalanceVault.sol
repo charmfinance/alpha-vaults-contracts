@@ -180,7 +180,7 @@ contract PassiveRebalanceVault is
         )
     {
         require(amount0Desired > 0 || amount1Desired > 0, "amounts");
-        require(to != address(0), "to");
+        require(to != address(0) && to != address(this), "to");
 
         // Do a zero-burn to poke the Uniswap pool so it updates fees earned
         if (_positionLiquidity(baseLower, baseUpper) > 0) {
@@ -264,7 +264,7 @@ contract PassiveRebalanceVault is
         address to
     ) external override nonReentrant returns (uint256 amount0, uint256 amount1) {
         require(shares > 0, "shares");
-        require(to != address(0), "to");
+        require(to != address(0) && to != address(this), "to");
 
         // Withdraw proportion of liquidity from Uniswap pool and send
         // resulting tokens to recipient directly

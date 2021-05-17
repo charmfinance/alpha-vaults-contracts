@@ -228,6 +228,8 @@ def test_deposit_checks(vault, user):
         vault.deposit(0, 0, 0, 0, user, {"from": user})
     with reverts("to"):
         vault.deposit(1e8, 1e8, 0, 0, ZERO_ADDRESS, {"from": user})
+    with reverts("to"):
+        vault.deposit(1e8, 1e8, 0, 0, vault, {"from": user})
 
     with reverts("amount0Min"):
         vault.deposit(1e8, 0, 2e8, 0, user, {"from": user})
@@ -295,6 +297,8 @@ def test_withdraw_checks(vault, user, recipient):
         vault.withdraw(0, 0, 0, recipient, {"from": user})
     with reverts("to"):
         vault.withdraw(shares - 1000, 0, 0, ZERO_ADDRESS, {"from": user})
+    with reverts("to"):
+        vault.withdraw(shares - 1000, 0, 0, vault, {"from": user})
 
     with reverts("amount0Min"):
         vault.withdraw(shares - 1000, 1e18, 0, recipient, {"from": user})
