@@ -22,9 +22,10 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     # fast forward 1 hour
     chain.sleep(3600)
 
-    # Store fees
+    # Store totals
     total0, total1 = vault.getTotalAmounts()
-    fees0, fees1 = vault.fees0(), vault.fees1()
+    totalSupply = vault.totalSupply()
+    govShares = vault.balanceOf(gov)
 
     # Rebalance
     tx = vault.rebalance({"from": gov})
@@ -63,37 +64,24 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
         assert rebalance[0] > 0
 
     # Check no tokens left unused. Only small amount left due to rounding
-    assert tokens[0].balanceOf(vault) - vault.fees0() < 1000
-    assert tokens[1].balanceOf(vault) - vault.fees1() < 1000
+    assert tokens[0].balanceOf(vault) < 1000
+    assert tokens[1].balanceOf(vault) < 1000
 
     # Check streaming fee charged
-    total0After, total1After = vault.getTotalAmounts()
-    charged0 = vault.fees0() - fees0
-    charged1 = vault.fees1() - fees1
-    assert approx(charged0, rel=1e-3) == (total0After + charged0) * 0.02 / 24
-    assert approx(charged1, rel=1e-3) == (total1After + charged1) * 0.02 / 24
+    assert approx(vault.balanceOf(gov) - govShares, rel=1e-3) == totalSupply * 0.02 / 24
 
     # Check event
+    total0After, total1After = vault.getTotalAmounts()
     (ev,) = tx.events["Snapshot"]
     assert ev["tick"] == tick
     assert approx(ev["totalAmount0"]) == total0After
     assert approx(ev["totalAmount1"]) == total1After
     assert ev["totalSupply"] == vault.totalSupply()
-
-    assert tx.events["EarnProtocolFees"] == {
-        "protocolFees0": charged0,
-        "protocolFees1": charged1,
-    }
+    assert ev["sharesToProtocol"] == vault.balanceOf(gov) - govShares
 
     (ev1, ev2) = tx.events["CollectFees"]
-    assert (
-        approx(ev1["fees0"] + ev2["fees0"], rel=1e-6, abs=1)
-        == total0After - total0 + charged0
-    )
-    assert (
-        approx(ev1["fees1"] + ev2["fees1"], rel=1e-6, abs=1)
-        == total1After - total1 + charged1
-    )
+    assert approx(ev1["fees0"] + ev2["fees0"], rel=1e-6, abs=1) == total0After - total0
+    assert approx(ev1["fees1"] + ev2["fees1"], rel=1e-6, abs=1) == total1After - total1
 
 
 @pytest.mark.parametrize("buy", [False, True])

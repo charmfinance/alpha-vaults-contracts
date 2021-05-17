@@ -41,23 +41,6 @@ def test_governance_methods(vault, tokens, gov, user, recipient):
     vault.setTwapDuration(800, {"from": gov})
     assert vault.twapDuration() == 800
 
-    # Check setting twap duration
-    tx = vault.deposit(1e8, 1e10, 0, 0, gov, {"from": gov})
-    fees0, fees1 = vault.fees0(), vault.fees1()
-    balance0 = tokens[0].balanceOf(recipient)
-    balance1 = tokens[1].balanceOf(recipient)
-    with reverts("governance"):
-        vault.collectProtocol(1e3, 1e4, recipient, {"from": user})
-    with reverts("SafeMath: subtraction overflow"):
-        vault.collectProtocol(1e12, 1e4, recipient, {"from": gov})
-    with reverts("SafeMath: subtraction overflow"):
-        vault.collectProtocol(1e3, 1e12, recipient, {"from": gov})
-    vault.collectProtocol(1e3, 1e4, recipient, {"from": gov})
-    assert vault.fees0() == fees0 - 1e3
-    assert vault.fees1() == fees1 - 1e4
-    assert tokens[0].balanceOf(recipient) - balance0 == 1e3
-    assert tokens[1].balanceOf(recipient) - balance1 == 1e4 > 0
-
     # Check setting deposit fee
     with reverts("governance"):
         vault.setDepositFee(0, {"from": user})

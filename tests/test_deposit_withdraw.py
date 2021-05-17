@@ -10,6 +10,7 @@ from pytest import approx
 def test_initial_deposit(
     vault,
     tokens,
+    gov,
     user,
     recipient,
     amount0Desired,
@@ -36,8 +37,7 @@ def test_initial_deposit(
     assert amount1 == balance1 - tokens[1].balanceOf(user)
 
     # Check vault updates fees correctly
-    assert vault.fees0() == amount0 * 0.01
-    assert vault.fees1() == amount1 * 0.01
+    assert approx(vault.balanceOf(gov)) == (shares + vault.balanceOf(gov)) / 100
 
     # Check event
     assert tx.events["Deposit"] == {
@@ -46,10 +46,7 @@ def test_initial_deposit(
         "shares": shares,
         "amount0": amount0,
         "amount1": amount1,
-    }
-    assert tx.events["EarnProtocolFees"] == {
-        "protocolFees0": amount0 * 0.01,
-        "protocolFees1": amount1 * 0.01,
+        "sharesToProtocol": vault.balanceOf(gov),
     }
 
 
@@ -61,6 +58,7 @@ def test_deposit(
     vaultAfterPriceMove,
     tokens,
     getPositions,
+    gov,
     user,
     recipient,
     amount0Desired,
@@ -73,7 +71,7 @@ def test_deposit(
     balance1 = tokens[1].balanceOf(user)
     totalSupply = vault.totalSupply()
     total0, total1 = vault.getTotalAmounts()
-    fees0, fees1 = vault.fees0(), vault.fees1()
+    govShares = vault.balanceOf(gov)
 
     # Deposit
     tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, recipient, {"from": user})
@@ -95,13 +93,14 @@ def test_deposit(
 
     # Check total amounts are in proportion
     total0After, total1After = vault.getTotalAmounts()
+    totalSupplyAfter = vault.totalSupply()
     assert approx(total0 * total1After) == total1 * total0After
-    assert approx(total0 * (totalSupply + shares)) == total0After * totalSupply
-    assert approx(total1 * (totalSupply + shares)) == total1After * totalSupply
+    assert approx(total0 * totalSupplyAfter) == total0After * totalSupply
+    assert approx(total1 * totalSupplyAfter) == total1After * totalSupply
 
     # Check vault updates fees correctly
-    assert vault.fees0() - fees0 == amount0 * 0.01
-    assert vault.fees1() - fees1 == amount1 * 0.01
+    sharesToProtocol = vault.balanceOf(gov) - govShares
+    assert approx(sharesToProtocol) == (shares + sharesToProtocol) / 100
 
     # Check event
     assert tx.events["Deposit"] == {
@@ -110,10 +109,7 @@ def test_deposit(
         "shares": shares,
         "amount0": amount0,
         "amount1": amount1,
-    }
-    assert tx.events["EarnProtocolFees"] == {
-        "protocolFees0": amount0 * 0.01,
-        "protocolFees1": amount1 * 0.01,
+        "sharesToProtocol": sharesToProtocol,
     }
 
 
@@ -168,7 +164,8 @@ def test_deposit_when_vault_only_has_token0(
 
     # Check total amounts are in proportion
     total0After, total1After = vault.getTotalAmounts()
-    assert approx(total0 * (totalSupply + shares)) == total0After * totalSupply
+    totalSupplyAfter = vault.totalSupply()
+    assert approx(total0 * totalSupplyAfter) == total0After * totalSupply
 
 
 @pytest.mark.parametrize(
@@ -222,7 +219,8 @@ def test_deposit_when_vault_only_has_token1(
 
     # Check total amounts are in proportion
     total0After, total1After = vault.getTotalAmounts()
-    assert approx(total1 * (totalSupply + shares)) == total1After * totalSupply
+    totalSupplyAfter = vault.totalSupply()
+    assert approx(total1 * totalSupplyAfter) == total1After * totalSupply
 
 
 def test_deposit_checks(vault, user):
