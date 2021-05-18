@@ -19,6 +19,31 @@ import "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
 
 import "./AlphaVault.sol";
 
+/**
+ * @title   Alpha Strategy
+ * @notice  Tells Alpha Vault to place two range orders:
+ *
+ *          1. Base order is placed between X - B and X + B + TS.
+ *          2. Limit order is placed between X - L and X, or between X + TS
+ *             and X + L + TS, depending on which token it holds more of.
+ *
+ *          where:
+ *
+ *              X = current tick rounded down to multiple of tick spacing
+ *              TS = tick spacing
+ *              B = base threshold
+ *              L = limit threshold
+ *
+ *          Note that after these two orders, the vault should have deposited
+ *          all its tokens and should only have a few wei left.
+ *
+ *          Because the limit order tries to sell whichever token the vault
+ *          holds more of, the vault's holdings will have a tendency to get
+ *          closer to a 1:1 balance. This enables it to continue providing
+ *          liquidity without running out of inventory of either token, and
+ *          achieves this without the need to swap directly on Uniswap and pay
+ *          fees.
+ */
 contract AlphaStrategy {
     AlphaVault vault;
     IUniswapV3Pool pool;
@@ -63,6 +88,10 @@ contract AlphaStrategy {
         (, lastMid, , , , , ) = pool.slot0();
     }
 
+    /**
+     * Reverts if current price deviates too much from the TWAP, or if the
+     * price is extremely high or low.
+     */
     function rebalance() external {
         if (keeper != address(0)) {
             require(msg.sender == keeper, "keeper");

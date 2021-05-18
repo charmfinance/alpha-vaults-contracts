@@ -22,45 +22,6 @@ import "../interfaces/IVault.sol";
 /**
  * @title   Alpha Vault
  * @notice  A vault that provides liquidity on Uniswap V3.
- *
- *          Each deployed vault manages liquidity on a single Uniswap V3 pool.
- *          Users enter and leave a vault via the deposit() and withdraw()
- *          methods.
- *
- *          When a user calls deposit(), they deposit both tokens proportional
- *          to the vault's current holdings. These tokens sit in the vault and
- *          are not used for liquidity on Uniswap until the next rebalance.
- *
- *          When a user calls withdraw(), the proportional amount of liquidity
- *          from each position is withdrawn from the Uniswap pool and the
- *          resulting amounts, as well as the proportion of unused balances in
- *          the vault, are returned to the user.
- *
- *          The rebalance() method has to be called periodically. This method
- *          withdraws all liquidity from the pool, collects fees and then uses
- *          all the tokens it holds to place the two following range orders.
- *
- *              1. Base order is placed between X - B and X + B + TS.
- *              2. Limit order is placed between X - L and X, or between X + TS
- *                 and X + L + TS, depending on which token it holds more of.
- *
- *          where:
- *
- *              X = current tick rounded down to multiple of tick spacing
- *              TS = tick spacing
- *              B = base threshold
- *              L = limit threshold
- *
- *          Note that after the rebalance, the vault should have deposited all
- *          its tokens and shouldn't have any unused balance apart from small
- *          rounding amounts.
- *
- *          Because the limit order tries to sell whichever token the vault
- *          holds more of, the vault's holdings will have a tendency to get
- *          closer to a 50/50 balance. This enables it to continue providing
- *          liquidity without running out of inventory of either token, and
- *          achieves this without the need to swap directly on Uniswap and pay
- *          fees.
  */
 contract AlphaVault is
     IVault,
@@ -72,8 +33,6 @@ contract AlphaVault is
 {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
-
-    bytes32 public version = "1.1";
 
     IUniswapV3Pool public pool;
     IERC20 public token0;
@@ -119,9 +78,11 @@ contract AlphaVault is
     }
 
     /**
-     * @notice Deposit tokens in proportion to the vault's holdings.
-     * @dev Note it's not possible for the user to manipulate price to deposit
-     * cheaper, as the value of the range orders would always be increased.
+     * @notice Deposit tokens in proportion to the vault's current holdings.
+     * @dev These tokens sit in the vault and are not used for liquidity on
+     * Uniswap until the next rebalance. Also note it's not necessary to check
+     * if user manipulated price to deposit cheaper, as the value of the range
+     * orders can only by manipulated higher.
      * @param amount0Desired Max amount of token0 deposited
      * @param amount1Desired Max amount of token1 deposited
      * @param amount0Min Revert if resulting `amount0` is less than this
@@ -210,6 +171,9 @@ contract AlphaVault is
 
     /**
      * @notice Withdraw tokens in proportion to the vault's holdings.
+     * @dev Unlike deposits, the necessary amount of liquidity is removed from
+     * Uniswap. This costs more gas but means there doesn't have to be a buffer
+     * of unused tokens for withdrawals.
      * @param shares Shares burned by sender
      * @param amount0Min Revert if resulting `amount0` is smaller than this
      * @param amount1Min Revert if resulting `amount1` is smaller than this
@@ -278,9 +242,11 @@ contract AlphaVault is
     }
 
     /**
-     * @notice Updates vault's positions depending on how the price has moved.
-     * Reverts if current price deviates too much from the TWAP, or if the
-     * price is extremely high or low.
+     * @notice Updates vault's positions. Can only be called by the strategy.
+     * @dev Two orders are placed - a base order and a limit order. The base
+     * order is placed first with as much liquidity as possible. After placing
+     * this order, only one token should be left. This excess amount is then
+     * placed on one side of the current price.
      */
     function rebalance(
         int24 _baseLower,
@@ -307,13 +273,13 @@ contract AlphaVault is
         _mintLiquidity(_baseLower, _baseUpper, liquidity);
         (baseLower, baseUpper) = (_baseLower, _baseUpper);
 
+        // Calculate on which side it should place the limit order
         balance0 = _balance0();
         balance1 = _balance1();
         uint128 bidLiquidity = _liquidityForAmounts(_bidLower, _bidUpper, balance0, balance1);
         uint128 askLiquidity = _liquidityForAmounts(_askLower, _askUpper, balance0, balance1);
 
-        // Place limit order on Uniswap. This is an order that's completely
-        // on one side of the current price
+        // Place limit order on Uniswap
         if (bidLiquidity > askLiquidity) {
             _mintLiquidity(_bidLower, _bidUpper, bidLiquidity);
             (limitLower, limitUpper) = (_bidLower, _bidUpper);
@@ -471,6 +437,9 @@ contract AlphaVault is
         return uint128(x);
     }
 
+    /**
+     * @notice Collect accumulated protocol fees.
+     */
     function collectProtocol(
         uint256 amount0,
         uint256 amount1,
