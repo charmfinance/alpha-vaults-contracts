@@ -20,7 +20,7 @@ import "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
 import "../interfaces/IVault.sol";
 
 /**
- * @title   Passive Rebalance Vault
+ * @title   Alpha Vault
  * @notice  A vault that provides liquidity on Uniswap V3.
  *
  *          Each deployed vault manages liquidity on a single Uniswap V3 pool.
@@ -62,7 +62,7 @@ import "../interfaces/IVault.sol";
  *          achieves this without the need to swap directly on Uniswap and pay
  *          fees.
  */
-contract PassiveRebalanceVault is
+contract AlphaVault is
     IVault,
     IUniswapV3MintCallback,
     Multicall,

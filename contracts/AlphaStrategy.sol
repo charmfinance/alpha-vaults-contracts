@@ -17,12 +17,10 @@ import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
 
-import "./PassiveRebalanceVault.sol";
+import "./AlphaVault.sol";
 
 contract AlphaStrategy {
-    bytes32 public version = "1.1";
-
-    PassiveRebalanceVault vault;
+    AlphaVault vault;
     IUniswapV3Pool pool;
     int24 public tickSpacing;
     int24 public baseThreshold;
@@ -47,7 +45,7 @@ contract AlphaStrategy {
         uint32 _twapDuration,
         address _keeper
     ) {
-        vault = PassiveRebalanceVault(_vault);
+        vault = AlphaVault(_vault);
         pool = vault.pool();
         tickSpacing = pool.tickSpacing();
 

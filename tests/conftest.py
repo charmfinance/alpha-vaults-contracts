@@ -78,11 +78,11 @@ def tokens(MockToken, pool):
 
 @pytest.fixture
 def vault(
-    PassiveRebalanceVault, AlphaStrategy, pool, router, tokens, gov, users, keeper
+    AlphaVault, AlphaStrategy, pool, router, tokens, gov, users, keeper
 ):
     # protocolFee = 10000 (1%)
     # maxTotalSupply = 100e18 (100 tokens)
-    vault = gov.deploy(PassiveRebalanceVault, pool, 10000, 100e18)
+    vault = gov.deploy(AlphaVault, pool, 10000, 100e18)
 
     for u in users:
         tokens[0].approve(vault, 100e18, {"from": u})
@@ -166,7 +166,7 @@ def vaultOnlyWithToken1(vault, strategy, pool, router, gov, keeper):
 
 
 @pytest.fixture
-def poolFromPrice(pm, PassiveRebalanceVault, MockToken, tokens, gov):
+def poolFromPrice(pm, AlphaVault, MockToken, tokens, gov):
     def f(price):
         UniswapV3Core = pm(UNISWAP_V3_CORE)
         fee = 3000

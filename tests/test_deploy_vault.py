@@ -1,8 +1,8 @@
 from brownie import reverts, ZERO_ADDRESS
 
 
-def test_constructor(PassiveRebalanceVault, pool, gov):
-    vault = gov.deploy(PassiveRebalanceVault, pool, 10000, 100e18)
+def test_constructor(AlphaVault, pool, gov):
+    vault = gov.deploy(AlphaVault, pool, 10000, 100e18)
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
     assert vault.token1() == pool.token1()
@@ -21,6 +21,6 @@ def test_constructor(PassiveRebalanceVault, pool, gov):
     assert vault.getTotalAmounts() == (0, 0)
 
 
-def test_constructor_checks(PassiveRebalanceVault, pool, gov):
+def test_constructor_checks(AlphaVault, pool, gov):
     with reverts("protocolFee"):
-        gov.deploy(PassiveRebalanceVault, pool, 1e6, 100e18)
+        gov.deploy(AlphaVault, pool, 1e6, 100e18)
