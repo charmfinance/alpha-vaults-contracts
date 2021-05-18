@@ -23,8 +23,13 @@ def recipient(accounts):
 
 
 @pytest.fixture
-def users(gov, user, recipient):
-    yield [gov, user, recipient]
+def keeper(accounts):
+    yield accounts[3]
+
+
+@pytest.fixture
+def users(gov, user, recipient, keeper):
+    yield [gov, user, recipient, keeper]
 
 
 @pytest.fixture
@@ -72,26 +77,34 @@ def tokens(MockToken, pool):
 
 
 @pytest.fixture
-def vault(PassiveRebalanceVault, pool, router, tokens, gov, users):
-    # baseThreshold = 2400
-    # limitThreshold = 1200
-    # maxTwapDeviation = 200000 (big)
-    # twapDuration = 600 (10 minutes)
+def vault(
+    PassiveRebalanceVault, AlphaStrategy, pool, router, tokens, gov, users, keeper
+):
     # protocolFee = 10000 (1%)
     # maxTotalSupply = 100e18 (100 tokens)
-    vault = gov.deploy(
-        PassiveRebalanceVault, pool, 2400, 1200, 200000, 600, 10000, 100e18
-    )
+    vault = gov.deploy(PassiveRebalanceVault, pool, 10000, 100e18)
 
     for u in users:
         tokens[0].approve(vault, 100e18, {"from": u})
         tokens[1].approve(vault, 10000e18, {"from": u})
 
+    # baseThreshold = 2400
+    # limitThreshold = 1200
+    # maxTwapDeviation = 200000 (just a big number)
+    # twapDuration = 600 (10 minutes)
+    strategy = gov.deploy(AlphaStrategy, vault, 2400, 1200, 200000, 600, keeper)
+    vault.setStrategy(strategy, {"from": gov})
+
     yield vault
 
 
 @pytest.fixture
-def vaultAfterPriceMove(vault, pool, router, gov):
+def strategy(AlphaStrategy, vault):
+    return AlphaStrategy.at(vault.strategy())
+
+
+@pytest.fixture
+def vaultAfterPriceMove(vault, strategy, pool, router, gov, keeper):
 
     # Deposit and move price to simulate existing activity
     vault.deposit(1e16, 1e18, 0, 0, gov, {"from": gov})
@@ -103,7 +116,7 @@ def vaultAfterPriceMove(vault, pool, router, gov):
     assert tick != prevTick
 
     # Rebalance vault
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
 
     # Check vault holds both tokens
     total0, total1 = vault.getTotalAmounts()
@@ -113,13 +126,13 @@ def vaultAfterPriceMove(vault, pool, router, gov):
 
 
 @pytest.fixture
-def vaultOnlyWithToken0(vault, pool, router, gov):
+def vaultOnlyWithToken0(vault, strategy, pool, router, gov, keeper):
 
     # Deposit
     vault.deposit(1e14, 1e16, 0, 0, gov, {"from": gov})
 
-    # Refresh vault
-    vault.rebalance({"from": gov})
+    # Rebalance vault
+    strategy.rebalance({"from": keeper})
 
     # Swap token0 -> token1
     router.swap(pool, True, 1e16, {"from": gov})
@@ -133,13 +146,13 @@ def vaultOnlyWithToken0(vault, pool, router, gov):
 
 
 @pytest.fixture
-def vaultOnlyWithToken1(vault, pool, router, gov):
+def vaultOnlyWithToken1(vault, strategy, pool, router, gov, keeper):
 
     # Deposit
     vault.deposit(1e14, 1e16, 0, 0, gov, {"from": gov})
 
-    # Refresh vault
-    vault.rebalance({"from": gov})
+    # Rebalance vault
+    strategy.rebalance({"from": keeper})
 
     # Swap token1 -> token0
     router.swap(pool, False, 1e18, {"from": gov})

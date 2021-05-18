@@ -7,11 +7,13 @@ from conftest import computePositionKey
 
 @pytest.mark.parametrize("buy", [False, True])
 @pytest.mark.parametrize("big", [False, True])
-def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, big):
+def test_rebalance(
+    vault, strategy, pool, tokens, router, getPositions, gov, user, keeper, buy, big
+):
 
     # Mint some liquidity
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
 
     # Do a swap to move the price
     qty = 1e16 * [100, 1][buy] * [1, 100][big]
@@ -28,7 +30,7 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     govShares = vault.balanceOf(gov)
 
     # Rebalance
-    tx = vault.rebalance({"from": gov})
+    tx = strategy.rebalance({"from": keeper})
 
     # Check old positions are empty
     liquidity, _, _, owed0, owed1 = pool.positions(
@@ -51,7 +53,7 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
     else:
         assert vault.limitLower() == tickFloor - 1200
         assert vault.limitUpper() == tickFloor
-    assert vault.lastMid() == tick
+    assert strategy.lastMid() == tick
 
     base, rebalance = getPositions(vault)
 
@@ -92,11 +94,11 @@ def test_rebalance(vault, pool, tokens, router, getPositions, gov, user, buy, bi
 
 @pytest.mark.parametrize("buy", [False, True])
 def test_rebalance_twap_check(
-    vault, pool, tokens, router, getPositions, gov, user, buy
+    vault, strategy, pool, tokens, router, getPositions, gov, user, keeper, buy
 ):
 
     # Reduce max deviation
-    vault.setMaxTwapDeviation(500, {"from": gov})
+    strategy.setMaxTwapDeviation(500, {"from": gov})
 
     # Mint some liquidity
     vault.deposit(1e8, 1e10, 0, 0, user, {"from": user})
@@ -107,10 +109,10 @@ def test_rebalance_twap_check(
 
     # Rebalance
     with reverts("maxTwapDeviation"):
-        vault.rebalance({"from": gov})
+        strategy.rebalance({"from": keeper})
 
     # Wait for twap period to pass and poke price
     chain.sleep(610)
     router.swap(pool, buy, 1e8, {"from": gov})
 
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})

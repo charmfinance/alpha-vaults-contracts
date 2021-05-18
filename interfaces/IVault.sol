@@ -24,8 +24,6 @@ interface IVault {
         address
     ) external returns (uint256, uint256);
 
-    function rebalance() external;
-
     function getTotalAmounts() external view returns (uint256, uint256);
 
     event Deposit(

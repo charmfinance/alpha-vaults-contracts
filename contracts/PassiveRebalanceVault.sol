@@ -73,48 +73,35 @@ contract PassiveRebalanceVault is
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
+    bytes32 public version = "1.1";
+
     IUniswapV3Pool public pool;
     IERC20 public token0;
     IERC20 public token1;
     uint24 public fee;
     int24 public tickSpacing;
 
-    int24 public baseThreshold;
-    int24 public limitThreshold;
-    int24 public maxTwapDeviation;
-    uint32 public twapDuration;
     uint256 public protocolFee;
     uint256 public maxTotalSupply;
+    address public governance;
+    address public pendingGovernance;
+    bool public finalized;
+    address public strategy;
 
     int24 public baseLower;
     int24 public baseUpper;
     int24 public limitLower;
     int24 public limitUpper;
-    int24 public lastMid;
-    uint256 public lastRebalance;
     uint256 public protocolFees0;
     uint256 public protocolFees1;
 
-    address public governance;
-    address public pendingGovernance;
-    bool public finalized;
-    address public keeper;
-
     /**
      * @param _pool Underlying Uniswap V3 pool
-     * @param _baseThreshold Used to determine range of base order
-     * @param _limitThreshold Used to determine range of limit order
-     * @param _maxTwapDeviation Max deviation from TWAP during rebalance
-     * @param _twapDuration TWAP duration in seconds for rebalance check
      * @param _protocolFee Fee on deposits expressed as multiple of 1e-6
      * @param _maxTotalSupply Pause deposits if total supply exceeds this
      */
     constructor(
         address _pool,
-        int24 _baseThreshold,
-        int24 _limitThreshold,
-        int24 _maxTwapDeviation,
-        uint32 _twapDuration,
         uint256 _protocolFee,
         uint256 _maxTotalSupply
     ) ERC20("Alpha Vault", "AV") {
@@ -124,25 +111,11 @@ contract PassiveRebalanceVault is
         fee = pool.fee();
         tickSpacing = pool.tickSpacing();
 
-        baseThreshold = _baseThreshold;
-        limitThreshold = _limitThreshold;
-        maxTwapDeviation = _maxTwapDeviation;
-        twapDuration = _twapDuration;
         protocolFee = _protocolFee;
         maxTotalSupply = _maxTotalSupply;
-
-        lastRebalance = block.timestamp;
         governance = msg.sender;
-        keeper = msg.sender;
 
-        _checkThreshold(_baseThreshold);
-        _checkThreshold(_limitThreshold);
-        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
-        require(_twapDuration > 0, "twapDuration");
         require(_protocolFee < 1e6, "protocolFee");
-
-        (, lastMid, , , , , ) = pool.slot0();
-        _checkMid(lastMid);
     }
 
     /**
@@ -309,15 +282,15 @@ contract PassiveRebalanceVault is
      * Reverts if current price deviates too much from the TWAP, or if the
      * price is extremely high or low.
      */
-    function rebalance() external override nonReentrant {
-        require(msg.sender == keeper, "keeper");
-
-        (, int24 mid, , , , , ) = pool.slot0();
-        _checkMid(mid);
-        lastMid = mid;
-
-        int24 midFloor = _floor(mid);
-        int24 midCeil = midFloor + tickSpacing;
+    function rebalance(
+        int24 _baseLower,
+        int24 _baseUpper,
+        int24 _bidLower,
+        int24 _bidUpper,
+        int24 _askLower,
+        int24 _askUpper
+    ) external nonReentrant {
+        require(msg.sender == strategy, "strategy");
 
         // Withdraw all liquidity and collect fees from Uniswap pool
         _burnAllLiquidity(baseLower, baseUpper);
@@ -326,13 +299,28 @@ contract PassiveRebalanceVault is
         // Emit event with useful info
         uint256 balance0 = _balance0();
         uint256 balance1 = _balance1();
+        (, int24 mid, , , , , ) = pool.slot0();
         emit Snapshot(mid, balance0, balance1, totalSupply());
 
         // Place base order on Uniswap
-        _mintBaseOrder(midFloor, midCeil, balance0, balance1);
+        uint128 liquidity = _liquidityForAmounts(_baseLower, _baseUpper, balance0, balance1);
+        _mintLiquidity(_baseLower, _baseUpper, liquidity);
+        (baseLower, baseUpper) = (_baseLower, _baseUpper);
 
-        // Place limit order on Uniswap with updated balances
-        _mintLimitOrder(midFloor, midCeil, _balance0(), _balance1());
+        balance0 = _balance0();
+        balance1 = _balance1();
+        uint128 bidLiquidity = _liquidityForAmounts(_bidLower, _bidUpper, balance0, balance1);
+        uint128 askLiquidity = _liquidityForAmounts(_askLower, _askUpper, balance0, balance1);
+
+        // Place limit order on Uniswap. This is an order that's completely
+        // on one side of the current price
+        if (bidLiquidity > askLiquidity) {
+            _mintLiquidity(_bidLower, _bidUpper, bidLiquidity);
+            (limitLower, limitUpper) = (_bidLower, _bidUpper);
+        } else {
+            _mintLiquidity(_askLower, _askUpper, askLiquidity);
+            (limitLower, limitUpper) = (_askLower, _askUpper);
+        }
     }
 
     function _burnAllLiquidity(int24 tickLower, int24 tickUpper)
@@ -367,19 +355,12 @@ contract PassiveRebalanceVault is
         emit CollectFees(fees0, fees1, _protocolFees0, _protocolFees1);
     }
 
-    /// @dev Places the base order. This is an order that's symmetric around
-    /// the current price.
-    function _mintBaseOrder(
-        int24 midFloor,
-        int24 midCeil,
-        uint256 amount0,
-        uint256 amount1
+    function _mintLiquidity(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity
     ) internal {
-        int24 tickLower = midFloor - baseThreshold;
-        int24 tickUpper = midCeil + baseThreshold;
-        uint128 liquidity = _liquidityForAmounts(tickLower, tickUpper, amount0, amount1);
-
-        if (liquidity > 0) {
+        if (tickLower < tickUpper && liquidity > 0) {
             pool.mint(
                 address(this),
                 tickLower,
@@ -388,38 +369,6 @@ contract PassiveRebalanceVault is
                 abi.encode(address(this))
             );
         }
-        (baseLower, baseUpper) = (tickLower, tickUpper);
-    }
-
-    /// @dev Places the limit order. This is an order that's either just above
-    /// or just below the current price.
-    function _mintLimitOrder(
-        int24 midFloor,
-        int24 midCeil,
-        uint256 amount0,
-        uint256 amount1
-    ) internal {
-        (int24 bidLower, int24 bidUpper) = (midFloor - limitThreshold, midFloor);
-        (int24 askLower, int24 askUpper) = (midCeil, midCeil + limitThreshold);
-        uint128 bidLiquidity = _liquidityForAmounts(bidLower, bidUpper, amount0, amount1);
-        uint128 askLiquidity = _liquidityForAmounts(askLower, askUpper, amount0, amount1);
-
-        // Choose the range on which more liquidity can be placed
-        bool placeBid = bidLiquidity > askLiquidity;
-        int24 tickLower = placeBid ? bidLower : askLower;
-        int24 tickUpper = placeBid ? bidUpper : askUpper;
-        uint128 liquidity = placeBid ? bidLiquidity : askLiquidity;
-
-        if (liquidity > 0) {
-            pool.mint(
-                address(this),
-                tickLower,
-                tickUpper,
-                liquidity,
-                abi.encode(address(this))
-            );
-        }
-        (limitLower, limitUpper) = (tickLower, tickUpper);
     }
 
     /**
@@ -517,48 +466,9 @@ contract PassiveRebalanceVault is
             );
     }
 
-    function _checkMid(int24 mid) internal view {
-        // Check price is not too close to min/max allowed by Uniswap. In
-        // practice, the price would only be this extreme if all liquidity
-        // was pulled from the underlying pool.
-        int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
-        require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
-        require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
-
-        // Check TWAP deviation. This check prevents price manipulation before
-        // the rebalance and also avoids rebalancing when price has just spiked.
-        int24 twap = getTwap();
-        int24 deviation = mid > twap ? mid - twap : twap - mid;
-        require(deviation <= maxTwapDeviation, "maxTwapDeviation");
-    }
-
-    function _checkThreshold(int24 threshold) internal view {
-        require(threshold % tickSpacing == 0, "threshold not tick multiple");
-        require(threshold < TickMath.MAX_TICK, "threshold too high");
-        require(threshold > 0, "threshold not positive");
-    }
-
-    /// @dev Round tick down towards negative infinity towards nearest multiple
-    /// of `tickSpacing`.
-    function _floor(int24 tick) internal view returns (int24) {
-        int24 compressed = tick / tickSpacing;
-        if (tick < 0 && tick % tickSpacing != 0) compressed--;
-        return compressed * tickSpacing;
-    }
-
     function _toUint128(uint256 x) internal pure returns (uint128) {
         assert(x <= type(uint128).max);
         return uint128(x);
-    }
-
-    function getTwap() public view returns (int24) {
-        uint32 _twapDuration = twapDuration;
-        uint32[] memory secondsAgo = new uint32[](2);
-        secondsAgo[0] = _twapDuration;
-        secondsAgo[1] = 0;
-
-        (int56[] memory tickCumulatives, ) = pool.observe(secondsAgo);
-        return int24((tickCumulatives[1] - tickCumulatives[0]) / _twapDuration);
     }
 
     function collectProtocol(
@@ -572,24 +482,8 @@ contract PassiveRebalanceVault is
         if (amount1 > 0) token1.safeTransfer(to, amount1);
     }
 
-    function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {
-        _checkThreshold(_baseThreshold);
-        baseThreshold = _baseThreshold;
-    }
-
-    function setLimitThreshold(int24 _limitThreshold) external onlyGovernance {
-        _checkThreshold(_limitThreshold);
-        limitThreshold = _limitThreshold;
-    }
-
-    function setMaxTwapDeviation(int24 _maxTwapDeviation) external onlyGovernance {
-        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
-        maxTwapDeviation = _maxTwapDeviation;
-    }
-
-    function setTwapDuration(uint32 _twapDuration) external onlyGovernance {
-        require(_twapDuration > 0, "twapDuration");
-        twapDuration = _twapDuration;
+    function setStrategy(address _strategy) external onlyGovernance {
+        strategy = _strategy;
     }
 
     function setProtocolFee(uint256 _protocolFee) external onlyGovernance {
@@ -599,10 +493,6 @@ contract PassiveRebalanceVault is
 
     function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {
         maxTotalSupply = _maxTotalSupply;
-    }
-
-    function setKeeper(address _keeper) external onlyGovernance {
-        keeper = _keeper;
     }
 
     /**

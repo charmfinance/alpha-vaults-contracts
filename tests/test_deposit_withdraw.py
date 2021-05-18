@@ -232,14 +232,23 @@ def test_deposit_checks(vault, user):
 
 
 def test_withdraw(
-    vaultAfterPriceMove, pool, tokens, router, getPositions, gov, user, recipient
+    vaultAfterPriceMove,
+    strategy,
+    pool,
+    tokens,
+    router,
+    getPositions,
+    gov,
+    user,
+    recipient,
+    keeper,
 ):
     vault = vaultAfterPriceMove
 
     # Deposit and rebalance
     tx = vault.deposit(1e8, 1e10, 0, 0, user, {"from": user})
     shares, _, _ = tx.return_value
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
 
     # Store balances, supply and positions
     balance0 = tokens[0].balanceOf(recipient)
