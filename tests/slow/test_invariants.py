@@ -34,14 +34,14 @@ MAX_EXAMPLES = 5
 @given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_deposit(
-    vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
+    vault, strategy, pool, router, gov, user, keeper, tokens, amount0Desired, amount1Desired, buy, qty
 ):
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
     router.swap(pool, buy, qty, {"from": user})
 
     # Poke Uniswap amounts owed to include fees
@@ -86,14 +86,14 @@ def test_deposit(
 @given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_rebalance(
-    vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
+    vault, strategy, pool, router, gov, user, keeper, tokens, amount0Desired, amount1Desired, buy, qty
 ):
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 
     # Simulate random deposit and random price move
     vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
     router.swap(pool, buy, qty, {"from": user})
 
     # Ignore TWAP deviation
@@ -106,7 +106,7 @@ def test_rebalance(
     # Store totals
     total0, total1 = vault.getTotalAmounts()
 
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
 
     # Check leftover balances is low
     assert tokens[0].balanceOf(vault) - vault.protocolFees0() < 10000
@@ -126,14 +126,14 @@ def test_rebalance(
 @given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_deposit_then_withdraw(
-    vault, pool, router, gov, user, tokens, amount0Desired, amount1Desired, buy, qty
+    vault, strategy, pool, router, gov, user, keeper, tokens, amount0Desired, amount1Desired, buy, qty
 ):
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
     router.swap(pool, buy, qty, {"from": user})
 
     # Deposit
@@ -163,10 +163,12 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 # @settings(max_examples=MAX_EXAMPLES)
 # def test_cannot_make_instant_profit_from_manipulated_deposit(
 #     vault,
+#     strategy.
 #     pool,
 #     router,
 #     gov,
 #     user,
+#     keeper,
 #     tokens,
 #     amount0Desired,
 #     amount1Desired,
@@ -180,7 +182,7 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 #
 #     # Simulate deposit and random price move
 #     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-#     vault.rebalance({"from": gov})
+#     strategy.rebalance({"from": keeper})
 #     router.swap(pool, buy, qty, {"from": user})
 #
 #     # Store initial balances
@@ -219,10 +221,12 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_manipulated_withdraw(
     vault,
+    strategy,
     pool,
     router,
     gov,
     user,
+    keeper,
     tokens,
     amount0Desired,
     amount1Desired,
@@ -236,7 +240,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
     router.swap(pool, buy, qty, {"from": user})
 
     # Store initial balances
@@ -273,6 +277,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_around_rebalance(
     vault,
+    strategy,
     pool,
     router,
     gov,
@@ -290,7 +295,7 @@ def test_cannot_make_instant_profit_around_rebalance(
 
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
     router.swap(pool, buy, qty, {"from": user})
 
     # Poke Uniswap amounts owed to include fees
@@ -305,7 +310,7 @@ def test_cannot_make_instant_profit_around_rebalance(
     shares, amount0Deposit, amount1Deposit = tx.return_value
 
     # Rebalance
-    vault.rebalance({"from": gov})
+    strategy.rebalance({"from": keeper})
 
     # Withdraw all
     tx = vault.withdraw(shares, 0, 0, user, {"from": user})
