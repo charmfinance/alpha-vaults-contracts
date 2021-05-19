@@ -34,6 +34,31 @@ contract AlphaVault is
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
+    event Deposit(
+        address indexed sender,
+        address indexed to,
+        uint256 shares,
+        uint256 amount0,
+        uint256 amount1
+    );
+
+    event Withdraw(
+        address indexed sender,
+        address indexed to,
+        uint256 shares,
+        uint256 amount0,
+        uint256 amount1
+    );
+
+    event Snapshot(int24 tick, uint256 totalAmount0, uint256 totalAmount1, uint256 totalSupply);
+
+    event CollectFees(
+        uint256 fees0,
+        uint256 fees1,
+        uint256 protocolFees0,
+        uint256 protocolFees1
+    );
+
     IUniswapV3Pool public pool;
     IERC20 public token0;
     IERC20 public token1;
