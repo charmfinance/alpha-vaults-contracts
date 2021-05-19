@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Unlicense
 
 pragma solidity 0.7.6;
-pragma abicoder v2;
 
 import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
@@ -12,8 +11,6 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
-import "@uniswap/v3-periphery/contracts/base/Multicall.sol";
-import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
 
@@ -23,14 +20,7 @@ import "../interfaces/IVault.sol";
  * @title   Alpha Vault
  * @notice  A vault that provides liquidity on Uniswap V3.
  */
-contract AlphaVault is
-    IVault,
-    IUniswapV3MintCallback,
-    Multicall,
-    ERC20,
-    ReentrancyGuard,
-    SelfPermit
-{
+contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
