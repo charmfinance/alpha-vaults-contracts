@@ -77,9 +77,7 @@ def tokens(MockToken, pool):
 
 
 @pytest.fixture
-def vault(
-    AlphaVault, AlphaStrategy, pool, router, tokens, gov, users, keeper
-):
+def vault(AlphaVault, AlphaStrategy, pool, router, tokens, gov, users, keeper):
     # protocolFee = 10000 (1%)
     # maxTotalSupply = 100e18 (100 tokens)
     vault = gov.deploy(AlphaVault, pool, 10000, 100e18)

@@ -1,7 +1,9 @@
 from brownie import reverts
 
 
-def test_vault_governance_methods(vault, strategy, tokens, gov, user, recipient, keeper):
+def test_vault_governance_methods(
+    vault, strategy, tokens, gov, user, recipient, keeper
+):
 
     # Check setting protocol fee
     with reverts("governance"):

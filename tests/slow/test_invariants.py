@@ -34,7 +34,18 @@ MAX_EXAMPLES = 5
 @given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_deposit(
-    vault, strategy, pool, router, gov, user, keeper, tokens, amount0Desired, amount1Desired, buy, qty
+    vault,
+    strategy,
+    pool,
+    router,
+    gov,
+    user,
+    keeper,
+    tokens,
+    amount0Desired,
+    amount1Desired,
+    buy,
+    qty,
 ):
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
@@ -86,7 +97,18 @@ def test_deposit(
 @given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_rebalance(
-    vault, strategy, pool, router, gov, user, keeper, tokens, amount0Desired, amount1Desired, buy, qty
+    vault,
+    strategy,
+    pool,
+    router,
+    gov,
+    user,
+    keeper,
+    tokens,
+    amount0Desired,
+    amount1Desired,
+    buy,
+    qty,
 ):
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
@@ -126,7 +148,18 @@ def test_rebalance(
 @given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_deposit_then_withdraw(
-    vault, strategy, pool, router, gov, user, keeper, tokens, amount0Desired, amount1Desired, buy, qty
+    vault,
+    strategy,
+    pool,
+    router,
+    gov,
+    user,
+    keeper,
+    tokens,
+    amount0Desired,
+    amount1Desired,
+    buy,
+    qty,
 ):
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
