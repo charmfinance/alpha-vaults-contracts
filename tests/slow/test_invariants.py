@@ -5,29 +5,6 @@ from pytest import approx
 MAX_EXAMPLES = 5
 
 
-# test to get an idea of how burn/collect works
-# def test_router(pool, router, gov, user, tokens):
-#     balance0 = tokens[0].balanceOf(user)
-#     balance1 = tokens[1].balanceOf(user)
-#
-#     max_tick = 887272 // 60 * 60
-#     tx = router.mint(pool, -max_tick, max_tick, 1e16, {"from": user})
-#     print("Mint", tx.return_value)
-#
-#     router.swap(pool, True, 1e15, {"from": gov})
-#     router.swap(pool, False, -1e15, {"from": gov})
-#
-#     tx = pool.burn(-max_tick, max_tick, 1e16, {"from": user})
-#     print("Burn", tx.return_value)
-#
-#     tx = pool.collect(user, -max_tick, max_tick, 1e15, 1e17, {"from": user})
-#     tx = pool.collect(user, -max_tick, max_tick, 1e18, 1e18, {"from": user})
-#     print("Collect", tx.return_value)
-#
-#     print("Balance0", tokens[0].balanceOf(user) - balance0)
-#     print("Balance1", tokens[1].balanceOf(user) - balance1)
-
-
 @given(amount0Desired=strategy("uint256", min_value=0, max_value=1e18))
 @given(amount1Desired=strategy("uint256", min_value=0, max_value=1e18))
 @given(buy=strategy("bool"))
@@ -186,63 +163,62 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     assert approx(amount1Deposit, rel=1e-3) == amount1Withdraw
 
 
-# TODO fix
-# @given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-# @given(amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-# @given(buy=strategy("bool"))
-# @given(buy2=strategy("bool"))
-# @given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
-# @given(qty2=strategy("uint256", min_value=1e3, max_value=1e18))
-# @settings(max_examples=MAX_EXAMPLES)
-# def test_cannot_make_instant_profit_from_manipulated_deposit(
-#     vault,
-#     strategy.
-#     pool,
-#     router,
-#     gov,
-#     user,
-#     keeper,
-#     tokens,
-#     amount0Desired,
-#     amount1Desired,
-#     buy,
-#     qty,
-#     buy2,
-#     qty2,
-# ):
-#     # Set fee to 0 since this when an arb is most likely to work
-#     vault.setProtocolFee(0, {"from": gov})
-#
-#     # Simulate deposit and random price move
-#     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
-#     strategy.rebalance({"from": keeper})
-#     router.swap(pool, buy, qty, {"from": user})
-#
-#     # Store initial balances
-#     balance0 = tokens[0].balanceOf(user)
-#     balance1 = tokens[1].balanceOf(user)
-#
-#     # Manipulate
-#     router.swap(pool, buy2, qty2, {"from": user})
-#
-#     # Deposit
-#     tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
-#     shares, _, _ = tx.return_value
-#
-#     # Manipulate price back
-#     router.swap(pool, not buy2, -qty2, {"from": user})
-#
-#     # Withdraw all
-#     vault.withdraw(shares, 0, 0, user, {"from": user})
-#     price = 1.0001 ** pool.slot0()[1]
-#
-#     balance0After = tokens[0].balanceOf(user)
-#     balance1After = tokens[1].balanceOf(user)
-#
-#     # Check did not make a profit
-#     value = balance0 * price + balance1
-#     valueAfter = balance0After * price + balance1After
-#     assert value >= valueAfter
+@given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
+@given(amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18))
+@given(buy=strategy("bool"))
+@given(buy2=strategy("bool"))
+@given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
+@given(qty2=strategy("uint256", min_value=1e3, max_value=1e18))
+@settings(max_examples=MAX_EXAMPLES)
+def test_cannot_make_instant_profit_from_manipulated_deposit(
+    vault,
+    strategy,
+    pool,
+    router,
+    gov,
+    user,
+    keeper,
+    tokens,
+    amount0Desired,
+    amount1Desired,
+    buy,
+    qty,
+    buy2,
+    qty2,
+):
+    # Set fee to 0 since this when an arb is most likely to work
+    vault.setProtocolFee(0, {"from": gov})
+
+    # Simulate deposit and random price move
+    vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
+    strategy.rebalance({"from": keeper})
+    router.swap(pool, buy, qty, {"from": user})
+
+    # Store initial balances
+    balance0 = tokens[0].balanceOf(user)
+    balance1 = tokens[1].balanceOf(user)
+
+    # Manipulate
+    router.swap(pool, buy2, qty2, {"from": user})
+
+    # Deposit
+    tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
+    shares, _, _ = tx.return_value
+
+    # Manipulate price back
+    router.swap(pool, not buy2, -qty2 * 0.997, {"from": user})
+
+    # Withdraw all
+    vault.withdraw(shares, 0, 0, user, {"from": user})
+    price = 1.0001 ** pool.slot0()[1]
+
+    balance0After = tokens[0].balanceOf(user)
+    balance1After = tokens[1].balanceOf(user)
+
+    # Check did not make a profit
+    value = balance0 * price + balance1
+    valueAfter = balance0After * price + balance1After
+    assert value >= valueAfter
 
 
 @given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
