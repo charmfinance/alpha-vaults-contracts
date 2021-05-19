@@ -43,8 +43,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     event Snapshot(int24 tick, uint256 totalAmount0, uint256 totalAmount1, uint256 totalSupply);
 
     event CollectFees(
-        uint256 fees0,
-        uint256 fees1,
+        uint256 poolFees0,
+        uint256 poolFees1,
         uint256 protocolFees0,
         uint256 protocolFees1
     );
@@ -136,14 +136,14 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
 
+        // Pull in tokens from sender
+        if (amount0 > 0) token0.safeTransferFrom(msg.sender, address(this), amount0);
+        if (amount1 > 0) token1.safeTransferFrom(msg.sender, address(this), amount1);
+
         // Mint shares to recipient
         _mint(to, shares);
         emit Deposit(msg.sender, to, shares, amount0, amount1);
         require(totalSupply() <= maxTotalSupply, "maxTotalSupply");
-
-        // Transfer in tokens from sender
-        if (amount0 > 0) token0.safeTransferFrom(msg.sender, address(this), amount0);
-        if (amount1 > 0) token1.safeTransferFrom(msg.sender, address(this), amount1);
     }
 
     // @dev Calculates the largest possible `amount0` and `amount1` such that
@@ -202,17 +202,19 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         require(shares > 0, "shares");
         require(to != address(0) && to != address(this), "to");
 
-        // Withdraw proportion of liquidity from Uniswap pool and send
+        // Withdraw proportion of liquidity from Uniswap pool and push
         // resulting tokens to recipient directly
         (uint256 baseAmount0, uint256 baseAmount1) =
             _burnLiquidityShare(baseLower, baseUpper, shares, to);
         (uint256 limitAmount0, uint256 limitAmount1) =
             _burnLiquidityShare(limitLower, limitUpper, shares, to);
 
-        // Calculate proportion of unused balances
+        // Push tokens proportional to unused balances
         uint256 totalSupply = totalSupply();
         uint256 unusedAmount0 = _balance0().mul(shares).div(totalSupply);
         uint256 unusedAmount1 = _balance1().mul(shares).div(totalSupply);
+        if (unusedAmount0 > 0) token0.safeTransfer(to, unusedAmount0);
+        if (unusedAmount1 > 0) token1.safeTransfer(to, unusedAmount1);
 
         // Sum up total amounts sent to recipient
         amount0 = baseAmount0.add(limitAmount0).add(unusedAmount0);
@@ -223,25 +225,21 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         // Burn shares
         _burn(msg.sender, shares);
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
-
-        // Transfer tokens proportional to unused balances
-        if (unusedAmount0 > 0) token0.safeTransfer(to, unusedAmount0);
-        if (unusedAmount1 > 0) token1.safeTransfer(to, unusedAmount1);
     }
 
     /// @dev Withdraws share of liquidity in a range from Uniswap pool. Doesn't
-    /// collect earned fees.
+    /// collect earned fees. Reverts if total supply is 0.
     function _burnLiquidityShare(
         int24 tickLower,
         int24 tickUpper,
         uint256 shares,
         address to
     ) internal returns (uint256 amount0, uint256 amount1) {
-        uint256 position = uint256(_positionLiquidity(tickLower, tickUpper));
-        uint128 liquidity = _toUint128(position.mul(shares).div(totalSupply()));
+        uint128 position = _positionLiquidity(tickLower, tickUpper);
+        uint256 liquidity = uint256(position).mul(shares).div(totalSupply());
 
         if (liquidity > 0) {
-            (amount0, amount1) = pool.burn(tickLower, tickUpper, liquidity);
+            (amount0, amount1) = pool.burn(tickLower, tickUpper, _toUint128(liquidity));
 
             if (amount0 > 0 || amount1 > 0) {
                 (amount0, amount1) = pool.collect(
@@ -293,7 +291,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint128 bidLiquidity = _liquidityForAmounts(_bidLower, _bidUpper, balance0, balance1);
         uint128 askLiquidity = _liquidityForAmounts(_askLower, _askUpper, balance0, balance1);
 
-        // Place limit order on Uniswap
+        // Place bid or ask order on Uniswap
         if (bidLiquidity > askLiquidity) {
             _mintLiquidity(_bidLower, _bidUpper, bidLiquidity);
             (limitLower, limitUpper) = (_bidLower, _bidUpper);
@@ -329,8 +327,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             type(uint128).max
         );
 
-        uint256 fees0 = collect0.sub(owed0);
-        uint256 fees1 = collect1.sub(owed1);
+        uint256 poolFees0 = collect0.sub(owed0);
+        uint256 poolFees1 = collect1.sub(owed1);
 
         uint256 _protocolFees0;
         uint256 _protocolFees1;
@@ -338,12 +336,12 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         // Update accrued protocol fees
         uint256 _protocolFee = protocolFee;
         if (_protocolFee > 0) {
-            _protocolFees0 = fees0.mul(_protocolFee).div(1e6);
-            _protocolFees1 = fees1.mul(_protocolFee).div(1e6);
+            _protocolFees0 = poolFees0.mul(_protocolFee).div(1e6);
+            _protocolFees1 = poolFees1.mul(_protocolFee).div(1e6);
             protocolFees0 = protocolFees0.add(_protocolFees0);
             protocolFees1 = protocolFees1.add(_protocolFees1);
         }
-        emit CollectFees(fees0, fees1, _protocolFees0, _protocolFees1);
+        emit CollectFees(poolFees0, poolFees1, _protocolFees0, _protocolFees1);
     }
 
     /// @dev Deposits liquidity in a range on Uniswap pool.

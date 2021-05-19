@@ -2,19 +2,8 @@
 
 pragma solidity 0.7.6;
 
-import "@openzeppelin/contracts/math/Math.sol";
-import "@openzeppelin/contracts/math/SafeMath.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
-import "@uniswap/v3-periphery/contracts/base/Multicall.sol";
-import "@uniswap/v3-periphery/contracts/base/SelfPermit.sol";
-import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
-import "@uniswap/v3-periphery/contracts/libraries/PositionKey.sol";
 
 import "./AlphaVault.sol";
 
@@ -130,6 +119,7 @@ contract AlphaStrategy {
         lastTick = tick;
     }
 
+    /// @dev Fetch time-weighted average price from Uniswap pool.
     function getTwap() public view returns (int24) {
         uint32 _twapDuration = twapDuration;
         uint32[] memory secondsAgo = new uint32[](2);
