@@ -43,10 +43,10 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     event Snapshot(int24 tick, uint256 totalAmount0, uint256 totalAmount1, uint256 totalSupply);
 
     event CollectFees(
-        uint256 poolFees0,
-        uint256 poolFees1,
-        uint256 protocolFees0,
-        uint256 protocolFees1
+        uint256 feesFromPool0,
+        uint256 feesFromPool1,
+        uint256 feesToProtocol0,
+        uint256 feesToProtocol1
     );
 
     IUniswapV3Pool public pool;
@@ -64,13 +64,13 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     int24 public baseUpper;
     int24 public limitLower;
     int24 public limitUpper;
-    uint256 public protocolFees0;
-    uint256 public protocolFees1;
+    uint256 public accruedProtocolFees0;
+    uint256 public accruedProtocolFees1;
 
     /**
      * @dev After deploying, need to call setStrategy
      * @param _pool Underlying Uniswap V3 pool
-     * @param _protocolFee Fee on deposits expressed as multiple of 1e-6
+     * @param _protocolFee Protocol fee expressed as multiple of 1e-6
      * @param _maxTotalSupply Pause deposits if total supply exceeds this
      */
     constructor(
@@ -327,21 +327,20 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             type(uint128).max
         );
 
-        uint256 poolFees0 = collect0.sub(owed0);
-        uint256 poolFees1 = collect1.sub(owed1);
-
-        uint256 _protocolFees0;
-        uint256 _protocolFees1;
+        uint256 feesFromPool0 = collect0.sub(owed0);
+        uint256 feesFromPool1 = collect1.sub(owed1);
+        uint256 feesToProtocol0;
+        uint256 feesToProtocol1;
 
         // Update accrued protocol fees
         uint256 _protocolFee = protocolFee;
         if (_protocolFee > 0) {
-            _protocolFees0 = poolFees0.mul(_protocolFee).div(1e6);
-            _protocolFees1 = poolFees1.mul(_protocolFee).div(1e6);
-            protocolFees0 = protocolFees0.add(_protocolFees0);
-            protocolFees1 = protocolFees1.add(_protocolFees1);
+            feesToProtocol0 = feesFromPool0.mul(_protocolFee).div(1e6);
+            feesToProtocol1 = feesFromPool1.mul(_protocolFee).div(1e6);
+            accruedProtocolFees0 = accruedProtocolFees0.add(feesToProtocol0);
+            accruedProtocolFees1 = accruedProtocolFees1.add(feesToProtocol1);
         }
-        emit CollectFees(poolFees0, poolFees1, _protocolFees0, _protocolFees1);
+        emit CollectFees(feesFromPool0, feesFromPool1, feesToProtocol0, feesToProtocol1);
     }
 
     /// @dev Deposits liquidity in a range on Uniswap pool.
@@ -400,12 +399,12 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     /// @dev Amount of token0 held as unused balance.
     function _balance0() internal view returns (uint256) {
-        return token0.balanceOf(address(this)).sub(protocolFees0);
+        return token0.balanceOf(address(this)).sub(accruedProtocolFees0);
     }
 
     /// @dev Amount of token1 held as unused balance.
     function _balance1() internal view returns (uint256) {
-        return token1.balanceOf(address(this)).sub(protocolFees1);
+        return token1.balanceOf(address(this)).sub(accruedProtocolFees1);
     }
 
     /// @dev Callback for Uniswap V3 pool.
@@ -478,8 +477,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint256 amount1,
         address to
     ) external onlyGovernance {
-        protocolFees0 = protocolFees0.sub(amount0);
-        protocolFees1 = protocolFees1.sub(amount1);
+        accruedProtocolFees0 = accruedProtocolFees0.sub(amount0);
+        accruedProtocolFees1 = accruedProtocolFees1.sub(amount1);
         if (amount0 > 0) token0.safeTransfer(to, amount0);
         if (amount1 > 0) token1.safeTransfer(to, amount1);
     }
