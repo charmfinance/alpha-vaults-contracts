@@ -1,15 +1,16 @@
-from brownie import accounts, PassiveRebalanceVault
+from brownie import accounts, AlphaVault
 
 
 POOL = "0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"  # USDC / ETH
+
+PROTOCOL_FEE = 10000
+MAX_TOTAL_SUPPLY = 1e17
 
 BASE_THRESHOLD = 1800
 LIMIT_THRESHOLD = 600
 MAX_TWAP_DEVIATION = 100
 TWAP_DURATION = 60
-DEPOSIT_FEE = 0
-STREAMING_FEE = 0
-MAX_TOTAL_SUPPLY = 1e17
+KEEPER = ZERO_ADDRESS
 
 
 def main():
@@ -17,15 +18,21 @@ def main():
     balance = deployer.balance()
 
     vault = deployer.deploy(
-        PassiveRebalanceVault,
+        AlphaVault,
         POOL,
+        PROTOCOL_FEE,
+        MAX_TOTAL_SUPPLY,
+        publish_source=True,
+    )
+
+    strategy = deployer.deploy(
+        AlphaStrategy,
+        vault,
         BASE_THRESHOLD,
         LIMIT_THRESHOLD,
         MAX_TWAP_DEVIATION,
         TWAP_DURATION,
-        DEPOSIT_FEE,
-        STREAMING_FEE,
-        MAX_TOTAL_SUPPLY,
+        KEEPER,
         publish_source=True,
     )
 
