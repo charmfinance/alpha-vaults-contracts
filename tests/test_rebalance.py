@@ -66,8 +66,8 @@ def test_rebalance(
         assert rebalance[0] > 0
 
     # Check no tokens left unused. Only small amount left due to rounding
-    assert tokens[0].balanceOf(vault) - vault.protocolFees0() < 1000
-    assert tokens[1].balanceOf(vault) - vault.protocolFees1() < 1000
+    assert tokens[0].balanceOf(vault) - vault.accruedProtocolFees0() < 1000
+    assert tokens[1].balanceOf(vault) - vault.accruedProtocolFees1() < 1000
 
     # Check event
     total0After, total1After = vault.getTotalAmounts()
@@ -78,16 +78,20 @@ def test_rebalance(
     assert ev["totalSupply"] == vault.totalSupply()
 
     (ev1, ev2) = tx.events["CollectFees"]
-    dtotal0 = total0After - total0 + ev1["protocolFees0"] + ev2["protocolFees0"]
-    dtotal1 = total1After - total1 + ev1["protocolFees1"] + ev2["protocolFees1"]
-    assert approx(ev1["poolFees0"] + ev2["poolFees0"], rel=1e-6, abs=1) == dtotal0
+    dtotal0 = total0After - total0 + ev1["feesToProtocol0"] + ev2["feesToProtocol0"]
+    dtotal1 = total1After - total1 + ev1["feesToProtocol1"] + ev2["feesToProtocol1"]
     assert (
-        approx(ev1["protocolFees0"] + ev2["protocolFees0"], rel=1e-6, abs=1)
+        approx(ev1["feesFromPool0"] + ev2["feesFromPool0"], rel=1e-6, abs=1) == dtotal0
+    )
+    assert (
+        approx(ev1["feesToProtocol0"] + ev2["feesToProtocol0"], rel=1e-6, abs=1)
         == dtotal0 * 0.01
     )
-    assert approx(ev1["poolFees1"] + ev2["poolFees1"], rel=1e-6, abs=1) == dtotal1
     assert (
-        approx(ev1["protocolFees1"] + ev2["protocolFees1"], rel=1e-6, abs=1)
+        approx(ev1["feesFromPool1"] + ev2["feesFromPool1"], rel=1e-6, abs=1) == dtotal1
+    )
+    assert (
+        approx(ev1["feesToProtocol1"] + ev2["feesToProtocol1"], rel=1e-6, abs=1)
         == dtotal1 * 0.01
     )
 

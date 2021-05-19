@@ -83,10 +83,8 @@ contract AlphaStrategy {
      * vault can update its positions.
      */
     function rebalance() external {
-        // Rebalance can only be called by keeper. If 0x0, anyone can call.
-        if (keeper != address(0)) {
-            require(msg.sender == keeper, "keeper");
-        }
+        // Rebalance can only be called by keeper
+        require(msg.sender == keeper, "keeper");
 
         (, int24 tick, , , , , ) = pool.slot0();
 
@@ -103,23 +101,23 @@ contract AlphaStrategy {
         int24 deviation = tick > twap ? tick - twap : twap - tick;
         require(deviation <= maxTwapDeviation, "maxTwapDeviation");
 
-        int24 midFloor = _floor(tick);
-        int24 midCeil = midFloor + tickSpacing;
+        int24 tickFloor = _floor(tick);
+        int24 tickCeil = tickFloor + tickSpacing;
 
         vault.rebalance(
-            midFloor - baseThreshold,
-            midCeil + baseThreshold,
-            midFloor - limitThreshold,
-            midFloor,
-            midCeil,
-            midCeil + limitThreshold
+            tickFloor - baseThreshold,
+            tickCeil + baseThreshold,
+            tickFloor - limitThreshold,
+            tickFloor,
+            tickCeil,
+            tickCeil + limitThreshold
         );
 
         // Not used for calculations but store for convenience
         lastTick = tick;
     }
 
-    /// @dev Fetch time-weighted average price from Uniswap pool.
+    /// @dev Fetches time-weighted average price from Uniswap pool.
     function getTwap() public view returns (int24) {
         uint32 _twapDuration = twapDuration;
         uint32[] memory secondsAgo = new uint32[](2);
@@ -130,7 +128,7 @@ contract AlphaStrategy {
         return int24((tickCumulatives[1] - tickCumulatives[0]) / _twapDuration);
     }
 
-    /// @dev Round tick down towards negative infinity towards nearest multiple
+    /// @dev Rounds tick down towards negative infinity so that it's a multiple
     /// of `tickSpacing`.
     function _floor(int24 tick) internal view returns (int24) {
         int24 compressed = tick / tickSpacing;
@@ -138,7 +136,7 @@ contract AlphaStrategy {
         return compressed * tickSpacing;
     }
 
-    /// @dev Check threshold is sensible.
+    /// @dev Checks threshold is sensible.
     function _checkThreshold(int24 threshold) internal view {
         require(threshold > 0, "threshold not positive");
         require(threshold < TickMath.MAX_TICK, "threshold too high");

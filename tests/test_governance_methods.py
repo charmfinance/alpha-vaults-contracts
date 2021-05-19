@@ -6,13 +6,13 @@ def test_vault_governance_methods(
 ):
 
     # Check sweep
-    token2 = gov.deploy(MockToken, "a", "a", 18)
-    token2.transfer(vault, 1e18, {"from": gov})
+    randomToken = gov.deploy(MockToken, "a", "a", 18)
+    randomToken.mint(vault, 1e18, {"from": gov})
     with reverts("governance"):
-        vault.sweep(token2, 1e18, {"from": user})
-    balance = tokens[0].balanceOf(gov)
-    vault.sweep(token2, 1e18, {"from": gov})
-    assert tokens[0].balanceOf(gov) == balance + 1e18
+        vault.sweep(randomToken, 1e18, {"from": user})
+    balance = randomToken.balanceOf(gov)
+    vault.sweep(randomToken, 1e18, {"from": gov})
+    assert randomToken.balanceOf(gov) == balance + 1e18
 
     # Check setting protocol fee
     with reverts("governance"):
@@ -91,7 +91,10 @@ def test_collect_protocol_fees(
     router.swap(pool, True, 1e16, {"from": gov})
     router.swap(pool, False, 1e18, {"from": gov})
     tx = strategy.rebalance({"from": keeper})
-    protocolFees0, protocolFees1 = vault.protocolFees0(), vault.protocolFees1()
+    protocolFees0, protocolFees1 = (
+        vault.accruedProtocolFees0(),
+        vault.accruedProtocolFees1(),
+    )
 
     balance0 = tokens[0].balanceOf(recipient)
     balance1 = tokens[1].balanceOf(recipient)
@@ -102,8 +105,8 @@ def test_collect_protocol_fees(
     with reverts("SafeMath: subtraction overflow"):
         vault.collectProtocol(1e3, 1e18, recipient, {"from": gov})
     vault.collectProtocol(1e3, 1e4, recipient, {"from": gov})
-    assert vault.protocolFees0() == protocolFees0 - 1e3
-    assert vault.protocolFees1() == protocolFees1 - 1e4
+    assert vault.accruedProtocolFees0() == protocolFees0 - 1e3
+    assert vault.accruedProtocolFees1() == protocolFees1 - 1e4
     assert tokens[0].balanceOf(recipient) - balance0 == 1e3
     assert tokens[1].balanceOf(recipient) - balance1 == 1e4 > 0
 

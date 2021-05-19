@@ -50,8 +50,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     );
 
     IUniswapV3Pool public pool;
-    IERC20 public token0;
-    IERC20 public token1;
+    IERC20 public immutable token0;
+    IERC20 public immutable token1;
 
     uint256 public protocolFee;
     uint256 public maxTotalSupply;
