@@ -80,12 +80,12 @@ def test_rebalance(
     (ev1, ev2) = tx.events["CollectFees"]
     dtotal0 = total0After - total0 + ev1["protocolFees0"] + ev2["protocolFees0"]
     dtotal1 = total1After - total1 + ev1["protocolFees1"] + ev2["protocolFees1"]
-    assert approx(ev1["fees0"] + ev2["fees0"], rel=1e-6, abs=1) == dtotal0
+    assert approx(ev1["poolFees0"] + ev2["poolFees0"], rel=1e-6, abs=1) == dtotal0
     assert (
         approx(ev1["protocolFees0"] + ev2["protocolFees0"], rel=1e-6, abs=1)
         == dtotal0 * 0.01
     )
-    assert approx(ev1["fees1"] + ev2["fees1"], rel=1e-6, abs=1) == dtotal1
+    assert approx(ev1["poolFees1"] + ev2["poolFees1"], rel=1e-6, abs=1) == dtotal1
     assert (
         approx(ev1["protocolFees1"] + ev2["protocolFees1"], rel=1e-6, abs=1)
         == dtotal1 * 0.01
@@ -116,6 +116,24 @@ def test_rebalance_twap_check(
     router.swap(pool, buy, 1e8, {"from": gov})
 
     strategy.rebalance({"from": keeper})
+
+
+def test_can_rebalance_when_vault_empty(
+    vault, strategy, pool, tokens, gov, user, keeper
+):
+    assert tokens[0].balanceOf(vault) == 0
+    assert tokens[1].balanceOf(vault) == 0
+    strategy.rebalance({"from": keeper})
+    strategy.rebalance({"from": keeper})
+
+    # Check ranges are set correctly
+    tick = pool.slot0()[1]
+    tickFloor = tick // 60 * 60
+    assert vault.baseLower() == tickFloor - 2400
+    assert vault.baseUpper() == tickFloor + 60 + 2400
+    assert vault.limitLower() == tickFloor + 60
+    assert vault.limitUpper() == tickFloor + 60 + 1200
+    assert strategy.lastTick() == tick
 
 
 def test_only_strategy_can_rebalance(vault, strategy, pool, gov, user, keeper):
