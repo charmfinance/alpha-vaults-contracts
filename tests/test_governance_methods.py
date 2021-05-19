@@ -2,8 +2,17 @@ from brownie import reverts
 
 
 def test_vault_governance_methods(
-    vault, strategy, tokens, gov, user, recipient, keeper
+    MockToken, vault, strategy, tokens, gov, user, recipient, keeper
 ):
+
+    # Check sweep
+    token2 = gov.deploy(MockToken, "a", "a", 18)
+    token2.transfer(vault, 1e18, {"from": gov})
+    with reverts("governance"):
+        vault.sweep(token2, 1e18, {"from": user})
+    balance = tokens[0].balanceOf(gov)
+    vault.sweep(token2, 1e18, {"from": gov})
+    assert tokens[0].balanceOf(gov) == balance + 1e18
 
     # Check setting protocol fee
     with reverts("governance"):

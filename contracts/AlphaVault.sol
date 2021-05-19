@@ -464,14 +464,14 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         }
     }
 
-    /// @dev Cast uint256 to uint128 with overflow check.
+    /// @dev Casts uint256 to uint128 with overflow check.
     function _toUint128(uint256 x) internal pure returns (uint128) {
         assert(x <= type(uint128).max);
         return uint128(x);
     }
 
     /**
-     * @notice Collect accumulated protocol fees.
+     * @notice Used to collect accumulated protocol fees.
      */
     function collectProtocol(
         uint256 amount0,
@@ -485,16 +485,25 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     }
 
     /**
-     * @notice Set the strategy contract that determines the position ranges
-     * and calls rebalance().
+     * @notice Removes tokens accidentally sent to this vault.
+     */
+    function sweep(IERC20 token, uint256 amount) external onlyGovernance {
+        require(token != token0 && token != token1, "token");
+        token.safeTransfer(msg.sender, amount);
+    }
+
+    /**
+     * @notice Used to set the strategy contract that determines the position
+     * ranges and calls rebalance(). Must be called after this vault is
+     * deployed.
      */
     function setStrategy(address _strategy) external onlyGovernance {
         strategy = _strategy;
     }
 
     /**
-     * @notice Set protocol fee charged on pool fees earned from Uniswap,
-     * expressed as multiple of 1e-6.
+     * @notice Used to change the protocol fee charged on pool fees earned from
+     * Uniswap, expressed as multiple of 1e-6.
      */
     function setProtocolFee(uint256 _protocolFee) external onlyGovernance {
         require(_protocolFee < 1e6, "protocolFee");
@@ -502,22 +511,24 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     }
 
     /**
-     * @notice Set deposit cap. Cap is on supply rather than amounts of token0
-     * and token1 and those amounts fluctuate naturally over time.
+     * @notice Used to change deposit cap for a guarded launch or to ensure
+     * vault doesn't grow too large relative to the pool. Cap is on total
+     * supply rather than amounts of token0 and token1 as those amounts
+     * fluctuate naturally over time.
      */
     function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {
         maxTotalSupply = _maxTotalSupply;
     }
 
     /**
-     * @notice Renounce emergency powers.
+     * @notice Used to renounce emergency powers. Cannot be undone.
      */
     function finalize() external onlyGovernance {
         finalized = true;
     }
 
     /**
-     * @notice Transfer tokens to governance in case of emergency. Cannot be
+     * @notice Transfers tokens to governance in case of emergency. Cannot be
      * called if already finalized.
      */
     function emergencyWithdraw(IERC20 token, uint256 amount) external onlyGovernance {
@@ -526,7 +537,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     }
 
     /**
-     * @notice Burn liquidity and transfer tokens to governance in case of
+     * @notice Removes liquidity and transfer tokens to governance in case of
      * emergency. Cannot be called if already finalized.
      */
     function emergencyBurn(
