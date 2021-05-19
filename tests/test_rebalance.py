@@ -53,7 +53,7 @@ def test_rebalance(
     else:
         assert vault.limitLower() == tickFloor - 1200
         assert vault.limitUpper() == tickFloor
-    assert strategy.lastMid() == tick
+    assert strategy.lastTick() == tick
 
     base, rebalance = getPositions(vault)
 
@@ -116,3 +116,11 @@ def test_rebalance_twap_check(
     router.swap(pool, buy, 1e8, {"from": gov})
 
     strategy.rebalance({"from": keeper})
+
+
+def test_only_strategy_can_rebalance(vault, strategy, pool, gov, user, keeper):
+    for u in [gov, user, keeper]:
+        with reverts("strategy"):
+            vault.rebalance(0, 0, 0, 0, 0, 0, {"from": u})
+
+    vault.rebalance(0, 0, 0, 0, 0, 0, {"from": strategy})

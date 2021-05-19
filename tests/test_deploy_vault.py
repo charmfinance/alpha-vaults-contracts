@@ -6,8 +6,6 @@ def test_constructor(AlphaVault, pool, gov):
     assert vault.pool() == pool
     assert vault.token0() == pool.token0()
     assert vault.token1() == pool.token1()
-    assert vault.fee() == pool.fee()
-    assert vault.tickSpacing() == pool.tickSpacing()
 
     assert vault.protocolFee() == 10000
     assert vault.maxTotalSupply() == 100e18

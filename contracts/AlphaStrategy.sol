@@ -45,22 +45,24 @@ import "./AlphaVault.sol";
  *          fees.
  */
 contract AlphaStrategy {
-    AlphaVault vault;
-    IUniswapV3Pool pool;
+    AlphaVault public vault;
+    IUniswapV3Pool public pool;
     int24 public tickSpacing;
+
     int24 public baseThreshold;
     int24 public limitThreshold;
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
     address public keeper;
-    int24 public lastMid;
+    int24 public lastTick;
 
     /**
      * @param _vault Underlying Alpha Vault
-     * @param _baseThreshold Used to determine range of base order
-     * @param _limitThreshold Used to determine range of limit order
+     * @param _baseThreshold Used to determine base order range
+     * @param _limitThreshold Used to determine limit order range
      * @param _maxTwapDeviation Max deviation from TWAP during rebalance
      * @param _twapDuration TWAP duration in seconds for rebalance check
+     * @param _keeper Account that can call rebalance()
      */
     constructor(
         address _vault,
@@ -85,34 +87,35 @@ contract AlphaStrategy {
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
         require(_twapDuration > 0, "twapDuration");
 
-        (, lastMid, , , , , ) = pool.slot0();
+        (, lastTick, , , , , ) = pool.slot0();
     }
 
     /**
-     * Reverts if current price deviates too much from the TWAP, or if the
-     * price is extremely high or low.
+     * Calculates new ranges for orders and calls vault.rebalance() so that
+     * vault can update its positions.
      */
     function rebalance() external {
+        // Rebalance can only be called by keeper. If 0x0, anyone can call.
         if (keeper != address(0)) {
             require(msg.sender == keeper, "keeper");
         }
 
-        (, int24 mid, , , , , ) = pool.slot0();
+        (, int24 tick, , , , , ) = pool.slot0();
 
         // Check price is not too close to min/max allowed by Uniswap. In
         // practice, the price would only be this extreme if all liquidity
         // was pulled from the underlying pool.
         int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
-        require(mid > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
-        require(mid < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
+        require(tick > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
+        require(tick < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
 
         // Check TWAP deviation. This check prevents price manipulation before
         // the rebalance and also avoids rebalancing when price has just spiked.
         int24 twap = getTwap();
-        int24 deviation = mid > twap ? mid - twap : twap - mid;
+        int24 deviation = tick > twap ? tick - twap : twap - tick;
         require(deviation <= maxTwapDeviation, "maxTwapDeviation");
 
-        int24 midFloor = _floor(mid);
+        int24 midFloor = _floor(tick);
         int24 midCeil = midFloor + tickSpacing;
 
         vault.rebalance(
@@ -123,7 +126,9 @@ contract AlphaStrategy {
             midCeil,
             midCeil + limitThreshold
         );
-        lastMid = mid;
+
+        // Not used for calculations but store for convenience
+        lastTick = tick;
     }
 
     function getTwap() public view returns (int24) {
@@ -144,6 +149,7 @@ contract AlphaStrategy {
         return compressed * tickSpacing;
     }
 
+    /// @dev Check threshold is sensible.
     function _checkThreshold(int24 threshold) internal view {
         require(threshold > 0, "threshold not positive");
         require(threshold < TickMath.MAX_TICK, "threshold too high");
@@ -174,6 +180,7 @@ contract AlphaStrategy {
         twapDuration = _twapDuration;
     }
 
+    /// @dev Uses same governance as underlying vault.
     modifier onlyGovernance {
         require(msg.sender == vault.governance(), "governance");
         _;

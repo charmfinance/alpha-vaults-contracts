@@ -3,6 +3,8 @@ from brownie import reverts
 
 def test_constructor(AlphaStrategy, vault, gov, keeper):
     strategy = gov.deploy(AlphaStrategy, vault, 2400, 1200, 500, 600, keeper)
+    assert strategy.vault() == vault
+    assert strategy.pool() == vault.pool()
     assert strategy.baseThreshold() == 2400
     assert strategy.limitThreshold() == 1200
     assert strategy.maxTwapDeviation() == 500

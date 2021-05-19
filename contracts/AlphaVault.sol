@@ -62,15 +62,13 @@ contract AlphaVault is
     IUniswapV3Pool public pool;
     IERC20 public token0;
     IERC20 public token1;
-    uint24 public fee;
-    int24 public tickSpacing;
 
     uint256 public protocolFee;
     uint256 public maxTotalSupply;
+    address public strategy;
     address public governance;
     address public pendingGovernance;
     bool public finalized;
-    address public strategy;
 
     int24 public baseLower;
     int24 public baseUpper;
@@ -80,6 +78,7 @@ contract AlphaVault is
     uint256 public protocolFees1;
 
     /**
+     * @dev After deploying, need to call setStrategy
      * @param _pool Underlying Uniswap V3 pool
      * @param _protocolFee Fee on deposits expressed as multiple of 1e-6
      * @param _maxTotalSupply Pause deposits if total supply exceeds this
@@ -92,8 +91,6 @@ contract AlphaVault is
         pool = IUniswapV3Pool(_pool);
         token0 = IERC20(pool.token0());
         token1 = IERC20(pool.token1());
-        fee = pool.fee();
-        tickSpacing = pool.tickSpacing();
 
         protocolFee = _protocolFee;
         maxTotalSupply = _maxTotalSupply;
@@ -103,13 +100,13 @@ contract AlphaVault is
     }
 
     /**
-     * @notice Deposit tokens in proportion to the vault's current holdings.
+     * @notice Deposits tokens in proportion to the vault's current holdings.
      * @dev These tokens sit in the vault and are not used for liquidity on
      * Uniswap until the next rebalance. Also note it's not necessary to check
-     * if user manipulated price to deposit cheaper, as the value of the range
+     * if user manipulated price to deposit cheaper, as the value of range
      * orders can only by manipulated higher.
-     * @param amount0Desired Max amount of token0 deposited
-     * @param amount1Desired Max amount of token1 deposited
+     * @param amount0Desired Max amount of token0 to deposit
+     * @param amount1Desired Max amount of token1 to deposit
      * @param amount0Min Revert if resulting `amount0` is less than this
      * @param amount1Min Revert if resulting `amount1` is less than this
      * @param to Recipient of shares
@@ -136,7 +133,7 @@ contract AlphaVault is
         require(amount0Desired > 0 || amount1Desired > 0, "amounts");
         require(to != address(0) && to != address(this), "to");
 
-        // Do a zero-burn to poke the Uniswap pool so it updates fees earned
+        // Do zero-burns to poke the Uniswap pools so earned fees are updated
         if (_positionLiquidity(baseLower, baseUpper) > 0) {
             pool.burn(baseLower, baseUpper, 0);
         }
@@ -160,8 +157,8 @@ contract AlphaVault is
     }
 
     // @dev Calculates the largest possible `amount0` and `amount1` such that
-    // they're in the same proportion as `total0` and `total1`, but not greater
-    // than `amount0Desired` and `amount1Desired` respectively.
+    // they're in the same proportion as total amounts, but not greater than
+    // `amount0Desired` and `amount1Desired` respectively.
     function _calcSharesAndAmounts(uint256 amount0Desired, uint256 amount1Desired)
         internal
         view
@@ -195,10 +192,10 @@ contract AlphaVault is
     }
 
     /**
-     * @notice Withdraw tokens in proportion to the vault's holdings.
-     * @dev Unlike deposits, the necessary amount of liquidity is removed from
-     * Uniswap. This costs more gas but means there doesn't have to be a buffer
-     * of unused tokens for withdrawals.
+     * @notice Withdraws tokens in proportion to the vault's holdings.
+     * @dev The necessary amount of liquidity is removed from Uniswap. This
+     * costs more gas but means there doesn't have to be a buffer of unused
+     * tokens for withdrawals.
      * @param shares Shares burned by sender
      * @param amount0Min Revert if resulting `amount0` is smaller than this
      * @param amount1Min Revert if resulting `amount1` is smaller than this
@@ -222,12 +219,10 @@ contract AlphaVault is
         (uint256 limitAmount0, uint256 limitAmount1) =
             _burnLiquidityShare(limitLower, limitUpper, shares, to);
 
-        // Also transfer tokens proportional to unused balances
+        // Calculate proportion of unused balances
         uint256 totalSupply = totalSupply();
         uint256 unusedAmount0 = _balance0().mul(shares).div(totalSupply);
         uint256 unusedAmount1 = _balance1().mul(shares).div(totalSupply);
-        if (unusedAmount0 > 0) token0.safeTransfer(to, unusedAmount0);
-        if (unusedAmount1 > 0) token1.safeTransfer(to, unusedAmount1);
 
         // Sum up total amounts sent to recipient
         amount0 = baseAmount0.add(limitAmount0).add(unusedAmount0);
@@ -238,10 +233,14 @@ contract AlphaVault is
         // Burn shares
         _burn(msg.sender, shares);
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
+
+        // Transfer tokens proportional to unused balances
+        if (unusedAmount0 > 0) token0.safeTransfer(to, unusedAmount0);
+        if (unusedAmount1 > 0) token1.safeTransfer(to, unusedAmount1);
     }
 
-    /// @dev Calculates proportion of liquidity from `shares`, then burns
-    /// liquidity and collects owed tokens from Uniswap pool.
+    /// @dev Withdraws share of liquidity in a range from Uniswap pool. Doesn't
+    /// collect earned fees.
     function _burnLiquidityShare(
         int24 tickLower,
         int24 tickUpper,
@@ -269,9 +268,9 @@ contract AlphaVault is
     /**
      * @notice Updates vault's positions. Can only be called by the strategy.
      * @dev Two orders are placed - a base order and a limit order. The base
-     * order is placed first with as much liquidity as possible. After placing
-     * this order, only one token should be left. This excess amount is then
-     * placed on one side of the current price.
+     * order is placed first with as much liquidity as possible. This order
+     * should use up all of one token, leaving only the other one. This excess
+     * amount is then placed as a single-sided bid or ask order.
      */
     function rebalance(
         int24 _baseLower,
@@ -283,15 +282,15 @@ contract AlphaVault is
     ) external nonReentrant {
         require(msg.sender == strategy, "strategy");
 
-        // Withdraw all liquidity and collect fees from Uniswap pool
+        // Withdraw all current liquidity from Uniswap pool
         _burnAllLiquidity(baseLower, baseUpper);
         _burnAllLiquidity(limitLower, limitUpper);
 
-        // Emit event with useful info
+        // Emit snapshot to record balances and supply
         uint256 balance0 = _balance0();
         uint256 balance1 = _balance1();
-        (, int24 mid, , , , , ) = pool.slot0();
-        emit Snapshot(mid, balance0, balance1, totalSupply());
+        (, int24 tick, , , , , ) = pool.slot0();
+        emit Snapshot(tick, balance0, balance1, totalSupply());
 
         // Place base order on Uniswap
         uint128 liquidity = _liquidityForAmounts(_baseLower, _baseUpper, balance0, balance1);
@@ -314,6 +313,8 @@ contract AlphaVault is
         }
     }
 
+    /// @dev Withdraws all liquidity in a range from Uniswap pool and collects
+    /// all fees in the process.
     function _burnAllLiquidity(int24 tickLower, int24 tickUpper)
         internal
         returns (
@@ -323,10 +324,13 @@ contract AlphaVault is
             uint256 collect1
         )
     {
+        // Burn all liquidity in this range
         uint128 liquidity = _positionLiquidity(tickLower, tickUpper);
         if (liquidity > 0) {
             (owed0, owed1) = pool.burn(tickLower, tickUpper, liquidity);
         }
+
+        // Collect all owed tokens including earned fees
         (collect0, collect1) = pool.collect(
             address(this),
             tickLower,
@@ -334,18 +338,25 @@ contract AlphaVault is
             type(uint128).max,
             type(uint128).max
         );
+
         uint256 fees0 = collect0.sub(owed0);
         uint256 fees1 = collect1.sub(owed1);
 
-        uint256 _protocolFee = protocolFee;
-        uint256 _protocolFees0 = fees0.mul(_protocolFee).div(1e6);
-        uint256 _protocolFees1 = fees1.mul(_protocolFee).div(1e6);
+        uint256 _protocolFees0;
+        uint256 _protocolFees1;
 
-        protocolFees0 = protocolFees0.add(_protocolFees0);
-        protocolFees1 = protocolFees1.add(_protocolFees1);
+        // Update accrued protocol fees
+        uint256 _protocolFee = protocolFee;
+        if (_protocolFee > 0) {
+            _protocolFees0 = fees0.mul(_protocolFee).div(1e6);
+            _protocolFees1 = fees1.mul(_protocolFee).div(1e6);
+            protocolFees0 = protocolFees0.add(_protocolFees0);
+            protocolFees1 = protocolFees1.add(_protocolFees1);
+        }
         emit CollectFees(fees0, fees1, _protocolFees0, _protocolFees1);
     }
 
+    /// @dev Deposits liquidity in a range on Uniswap pool.
     function _mintLiquidity(
         int24 tickLower,
         int24 tickUpper,
@@ -374,7 +385,7 @@ contract AlphaVault is
         total1 = _balance1().add(baseAmount1).add(limitAmount1);
     }
 
-    /// @dev Calculates amount of liquidity in vault's position.
+    /// @dev Amount of liquidity in vault's position.
     function _positionLiquidity(int24 tickLower, int24 tickUpper)
         internal
         view
@@ -384,7 +395,7 @@ contract AlphaVault is
         (liquidity, , , , ) = pool.positions(positionKey);
     }
 
-    /// @dev Calculates amounts of token0 and token1 held in vault's position.
+    /// @dev Amounts of token0 and token1 held in vault's position.
     function _positionAmounts(int24 tickLower, int24 tickUpper)
         internal
         view
@@ -399,10 +410,12 @@ contract AlphaVault is
         amount1 = amount1.add(uint256(tokensOwed1));
     }
 
+    /// @dev Amount of token0 held as unused balance.
     function _balance0() internal view returns (uint256) {
         return token0.balanceOf(address(this)).sub(protocolFees0);
     }
 
+    /// @dev Amount of token1 held as unused balance.
     function _balance1() internal view returns (uint256) {
         return token1.balanceOf(address(this)).sub(protocolFees1);
     }
@@ -425,38 +438,45 @@ contract AlphaVault is
         }
     }
 
+    /// @dev Wrapper around getAmountsForLiquidity for convenience.
     function _amountsForLiquidity(
         int24 tickLower,
         int24 tickUpper,
         uint128 liquidity
     ) internal view returns (uint256, uint256) {
-        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
-        return
-            LiquidityAmounts.getAmountsForLiquidity(
-                sqrtRatioX96,
-                TickMath.getSqrtRatioAtTick(tickLower),
-                TickMath.getSqrtRatioAtTick(tickUpper),
-                liquidity
-            );
+        if (tickLower < tickUpper) {
+            (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
+            return
+                LiquidityAmounts.getAmountsForLiquidity(
+                    sqrtRatioX96,
+                    TickMath.getSqrtRatioAtTick(tickLower),
+                    TickMath.getSqrtRatioAtTick(tickUpper),
+                    liquidity
+                );
+        }
     }
 
+    /// @dev Wrapper around getLiquidityForAmounts for convenience.
     function _liquidityForAmounts(
         int24 tickLower,
         int24 tickUpper,
         uint256 amount0,
         uint256 amount1
     ) internal view returns (uint128) {
-        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
-        return
-            LiquidityAmounts.getLiquidityForAmounts(
-                sqrtRatioX96,
-                TickMath.getSqrtRatioAtTick(tickLower),
-                TickMath.getSqrtRatioAtTick(tickUpper),
-                amount0,
-                amount1
-            );
+        if (tickLower < tickUpper) {
+            (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
+            return
+                LiquidityAmounts.getLiquidityForAmounts(
+                    sqrtRatioX96,
+                    TickMath.getSqrtRatioAtTick(tickLower),
+                    TickMath.getSqrtRatioAtTick(tickUpper),
+                    amount0,
+                    amount1
+                );
+        }
     }
 
+    /// @dev Cast uint256 to uint128 with overflow check.
     function _toUint128(uint256 x) internal pure returns (uint128) {
         assert(x <= type(uint128).max);
         return uint128(x);
@@ -476,15 +496,27 @@ contract AlphaVault is
         if (amount1 > 0) token1.safeTransfer(to, amount1);
     }
 
+    /**
+     * @notice Set the strategy contract that determines the position ranges
+     * and calls rebalance().
+     */
     function setStrategy(address _strategy) external onlyGovernance {
         strategy = _strategy;
     }
 
+    /**
+     * @notice Set protocol fee charged on pool fees earned from Uniswap,
+     * expressed as multiple of 1e-6.
+     */
     function setProtocolFee(uint256 _protocolFee) external onlyGovernance {
         require(_protocolFee < 1e6, "protocolFee");
         protocolFee = _protocolFee;
     }
 
+    /**
+     * @notice Set deposit cap. Cap is on supply rather than amounts of token0
+     * and token1 and those amounts fluctuate naturally over time.
+     */
     function setMaxTotalSupply(uint256 _maxTotalSupply) external onlyGovernance {
         maxTotalSupply = _maxTotalSupply;
     }
