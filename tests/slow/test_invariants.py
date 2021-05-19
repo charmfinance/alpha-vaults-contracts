@@ -119,7 +119,7 @@ def test_rebalance(
     router.swap(pool, buy, qty, {"from": user})
 
     # Ignore TWAP deviation
-    vault.setMaxTwapDeviation(1 << 22, {"from": gov})
+    strategy.setMaxTwapDeviation(1 << 22, {"from": gov})
 
     # Poke Uniswap amounts owed to include fees
     shares = vault.balanceOf(user)
@@ -182,8 +182,8 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     assert amount1Deposit >= amount1Withdraw
 
     # Check amounts are roughly equal
-    assert approx(amount0Deposit, abs=100) == amount0Withdraw
-    assert approx(amount1Deposit, abs=100) == amount1Withdraw
+    assert approx(amount0Deposit, rel=1e-3) == amount0Withdraw
+    assert approx(amount1Deposit, rel=1e-3) == amount1Withdraw
 
 
 # TODO fix
@@ -315,6 +315,7 @@ def test_cannot_make_instant_profit_around_rebalance(
     router,
     gov,
     user,
+    keeper,
     tokens,
     amount0Desired,
     amount1Desired,
