@@ -40,14 +40,14 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint256 amount1
     );
 
-    event Snapshot(int24 tick, uint256 totalAmount0, uint256 totalAmount1, uint256 totalSupply);
-
     event CollectFees(
         uint256 feesFromPool0,
         uint256 feesFromPool1,
         uint256 feesToProtocol0,
         uint256 feesToProtocol1
     );
+
+    event Snapshot(int24 tick, uint256 totalAmount0, uint256 totalAmount1, uint256 totalSupply);
 
     IUniswapV3Pool public pool;
     IERC20 public immutable token0;
@@ -68,7 +68,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     uint256 public accruedProtocolFees1;
 
     /**
-     * @dev After deploying, need to call setStrategy
+     * @dev After deploying, strategy needs to be set via `setStrategy()`
      * @param _pool Underlying Uniswap V3 pool
      * @param _protocolFee Protocol fee expressed as multiple of 1e-6
      * @param _maxTotalSupply Pause deposits if total supply exceeds this
@@ -161,7 +161,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint256 totalSupply = totalSupply();
         (uint256 total0, uint256 total1) = getTotalAmounts();
         if (totalSupply == 0) {
-            // For first deposit, just use the input amounts desired
+            // For first deposit, just use the amounts desired
             amount0 = amount0Desired;
             amount1 = amount1Desired;
             shares = Math.max(amount0, amount1);
@@ -172,11 +172,14 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             amount0 = amount0Desired;
             shares = amount0.mul(totalSupply).div(total0);
         } else {
+            // If total supply > 0, at least one of `total0` and `total1`
+            // should be > 0
             uint256 cross = Math.min(amount0Desired.mul(total1), amount1Desired.mul(total0));
             require(cross > 0, "cross");
 
-            amount0 = cross.sub(1).div(total1).add(1); // round up
-            amount1 = cross.sub(1).div(total0).add(1); // round up
+            // Round up amounts
+            amount0 = cross.sub(1).div(total1).add(1);
+            amount1 = cross.sub(1).div(total0).add(1);
             shares = cross.mul(totalSupply).div(total0).div(total1);
         }
     }
@@ -343,7 +346,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         emit CollectFees(feesFromPool0, feesFromPool1, feesToProtocol0, feesToProtocol1);
     }
 
-    /// @dev Deposits liquidity in a range on Uniswap pool.
+    /// @dev Deposits liquidity in a range on the Uniswap pool.
     function _mintLiquidity(
         int24 tickLower,
         int24 tickUpper,
@@ -425,7 +428,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         }
     }
 
-    /// @dev Wrapper around getAmountsForLiquidity for convenience.
+    /// @dev Wrapper around `LiquidityAmounts.getAmountsForLiquidity()`.
     function _amountsForLiquidity(
         int24 tickLower,
         int24 tickUpper,
@@ -443,7 +446,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         }
     }
 
-    /// @dev Wrapper around getLiquidityForAmounts for convenience.
+    /// @dev Wrapper around `LiquidityAmounts.getLiquidityForAmounts()`.
     function _liquidityForAmounts(
         int24 tickLower,
         int24 tickUpper,
@@ -551,14 +554,14 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     /**
      * @notice Governance address is not updated until the new governance
-     * address has called acceptGovernance() to accept this responsibility.
+     * address has called `acceptGovernance()` to accept this responsibility.
      */
     function setGovernance(address _governance) external onlyGovernance {
         pendingGovernance = _governance;
     }
 
     /**
-     * @notice setGovernance() should be called by the existing governance
+     * @notice `setGovernance()` should be called by the existing governance
      * address prior to calling this function.
      */
     function acceptGovernance() external {

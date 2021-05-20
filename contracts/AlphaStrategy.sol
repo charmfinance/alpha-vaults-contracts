@@ -50,7 +50,7 @@ contract AlphaStrategy {
      * @param _limitThreshold Used to determine limit order range
      * @param _maxTwapDeviation Max deviation from TWAP during rebalance
      * @param _twapDuration TWAP duration in seconds for rebalance check
-     * @param _keeper Account that can call rebalance()
+     * @param _keeper Account that can call `rebalance()`
      */
     constructor(
         address _vault,
@@ -79,24 +79,23 @@ contract AlphaStrategy {
     }
 
     /**
-     * Calculates new ranges for orders and calls vault.rebalance() so that
-     * vault can update its positions.
+     * Calculates new ranges for orders and calls `vault.rebalance()` so that
+     * vault can update its positions. Can only be called by keeper.
      */
     function rebalance() external {
-        // Rebalance can only be called by keeper
         require(msg.sender == keeper, "keeper");
 
         (, int24 tick, , , , , ) = pool.slot0();
 
-        // Check price is not too close to min/max allowed by Uniswap. In
-        // practice, the price would only be this extreme if all liquidity
-        // was pulled from the underlying pool.
+        // Check price is not too close to min/max allowed by Uniswap. Price
+        // shouldn't be this extreme unless something was wrong with the pool.
         int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
         require(tick > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
         require(tick < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
 
-        // Check TWAP deviation. This check prevents price manipulation before
-        // the rebalance and also avoids rebalancing when price has just spiked.
+        // Check price has not moved a lot recently. This mitigates price
+        // manipulation during rebalance and also prevents placing orders
+        // when it's too volatile.
         int24 twap = getTwap();
         int24 deviation = tick > twap ? tick - twap : twap - tick;
         require(deviation <= maxTwapDeviation, "maxTwapDeviation");
