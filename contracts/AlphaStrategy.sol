@@ -9,7 +9,8 @@ import "./AlphaVault.sol";
 
 /**
  * @title   Alpha Strategy
- * @notice  Tells Alpha Vault to place two range orders:
+ * @notice  Rebalancing strategy for Alpha Vault that maintains the two
+ *          following range orders:
  *
  *          1. Base order is placed between X - B and X + B + TS.
  *          2. Limit order is placed between X - L and X, or between X + TS
@@ -39,6 +40,7 @@ contract AlphaStrategy {
 
     int24 public baseThreshold;
     int24 public limitThreshold;
+    int24 public minLastTickDeviation;
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
     address public keeper;
@@ -56,6 +58,7 @@ contract AlphaStrategy {
         address _vault,
         int24 _baseThreshold,
         int24 _limitThreshold,
+        int24 _minLastTickDeviation,
         int24 _maxTwapDeviation,
         uint32 _twapDuration,
         address _keeper
@@ -66,12 +69,14 @@ contract AlphaStrategy {
 
         baseThreshold = _baseThreshold;
         limitThreshold = _limitThreshold;
+        minLastTickDeviation = _minLastTickDeviation;
         maxTwapDeviation = _maxTwapDeviation;
         twapDuration = _twapDuration;
         keeper = _keeper;
 
         _checkThreshold(_baseThreshold);
         _checkThreshold(_limitThreshold);
+        require(_minLastTickDeviation >= 0, "minLastTickDeviation");
         require(_maxTwapDeviation >= 0, "maxTwapDeviation");
         require(_twapDuration > 0, "twapDuration");
 
@@ -79,27 +84,14 @@ contract AlphaStrategy {
     }
 
     /**
-     * Calculates new ranges for orders and calls `vault.rebalance()` so that
-     * vault can update its positions. Can only be called by keeper.
+     * @notice Calculates new ranges for orders and calls `vault.rebalance()`
+     * so that vault can update its positions. Can only be called by keeper.
      */
     function rebalance() external {
         require(msg.sender == keeper, "keeper");
+        require(canRebalance(), "tick");
 
         (, int24 tick, , , , , ) = pool.slot0();
-
-        // Check price is not too close to min/max allowed by Uniswap. Price
-        // shouldn't be this extreme unless something was wrong with the pool.
-        int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
-        require(tick > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
-        require(tick < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
-
-        // Check price has not moved a lot recently. This mitigates price
-        // manipulation during rebalance and also prevents placing orders
-        // when it's too volatile.
-        int24 twap = getTwap();
-        int24 deviation = tick > twap ? tick - twap : twap - tick;
-        require(deviation <= maxTwapDeviation, "maxTwapDeviation");
-
         int24 tickFloor = _floor(tick);
         int24 tickCeil = tickFloor + tickSpacing;
 
@@ -112,8 +104,35 @@ contract AlphaStrategy {
             tickCeil + limitThreshold
         );
 
-        // Not used for calculations but store for convenience
         lastTick = tick;
+    }
+
+    /**
+     * @notice Checks underlying price to see if `rebalance()` can be called.
+     */
+    function canRebalance() public view returns (bool) {
+        // Check price has moved sufficiently since last rebalance. This avoids
+        // spending gas on rebalancing if there isn't a big change.
+        (, int24 tick, , , , , ) = pool.slot0();
+        int24 lastTickDeviation = tick > lastTick ? tick - lastTick : lastTick - tick;
+        if (lastTickDeviation < minLastTickDeviation) {
+            return false;
+        }
+
+        // Check price has not moved a lot recently. This mitigates price
+        // manipulation during rebalance and also prevents placing orders
+        // when it's too volatile.
+        int24 twap = getTwap();
+        int24 twapDeviation = tick > twap ? tick - twap : twap - tick;
+        if (twapDeviation > maxTwapDeviation) {
+            return false;
+        }
+
+        // Check price is not too close to min/max allowed by Uniswap. Price
+        // shouldn't be this extreme unless something was wrong with the pool.
+        int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
+        return (tick > TickMath.MIN_TICK + maxThreshold + tickSpacing &&
+            tick < TickMath.MAX_TICK - maxThreshold - tickSpacing);
     }
 
     /// @dev Fetches time-weighted average price from Uniswap pool.
@@ -154,6 +173,11 @@ contract AlphaStrategy {
     function setLimitThreshold(int24 _limitThreshold) external onlyGovernance {
         _checkThreshold(_limitThreshold);
         limitThreshold = _limitThreshold;
+    }
+
+    function setMinLastTickDeviation(int24 _minLastTickDeviation) external onlyGovernance {
+        require(_minLastTickDeviation >= 0, "minLastTickDeviation");
+        minLastTickDeviation = _minLastTickDeviation;
     }
 
     function setMaxTwapDeviation(int24 _maxTwapDeviation) external onlyGovernance {

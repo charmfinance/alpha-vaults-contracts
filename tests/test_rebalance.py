@@ -10,7 +10,6 @@ from conftest import computePositionKey
 def test_rebalance(
     vault, strategy, pool, tokens, router, getPositions, gov, user, keeper, buy, big
 ):
-
     # Mint some liquidity
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
     strategy.rebalance({"from": keeper})
@@ -97,6 +96,28 @@ def test_rebalance(
 
 
 @pytest.mark.parametrize("buy", [False, True])
+def test_rebalance_last_tick_check(
+    vault, strategy, pool, tokens, router, getPositions, gov, user, keeper, buy
+):
+
+    # Set min last tick deviation
+    strategy.setMinLastTickDeviation(500, {"from": gov})
+
+    # Can't rebalance
+    assert not strategy.canRebalance()
+    with reverts("tick"):
+        strategy.rebalance({"from": keeper})
+
+    # Do a swap to move the price a lot
+    qty = 1e16 * 100 * [100, 1][buy]
+    router.swap(pool, buy, qty, {"from": gov})
+
+    # Rebalance
+    assert strategy.canRebalance()
+    strategy.rebalance({"from": keeper})
+
+
+@pytest.mark.parametrize("buy", [False, True])
 def test_rebalance_twap_check(
     vault, strategy, pool, tokens, router, getPositions, gov, user, keeper, buy
 ):
@@ -111,14 +132,17 @@ def test_rebalance_twap_check(
     qty = 1e16 * 100 * [100, 1][buy]
     router.swap(pool, buy, qty, {"from": gov})
 
-    # Rebalance
-    with reverts("maxTwapDeviation"):
+    # Can't rebalance
+    assert not strategy.canRebalance()
+    with reverts("tick"):
         strategy.rebalance({"from": keeper})
 
     # Wait for twap period to pass and poke price
     chain.sleep(610)
     router.swap(pool, buy, 1e8, {"from": gov})
 
+    # Rebalance
+    assert strategy.canRebalance()
     strategy.rebalance({"from": keeper})
 
 
