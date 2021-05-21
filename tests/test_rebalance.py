@@ -53,6 +53,7 @@ def test_rebalance(
         assert vault.limitLower() == tickFloor - 1200
         assert vault.limitUpper() == tickFloor
     assert strategy.lastTick() == tick
+    assert strategy.getTick() == tick
 
     base, rebalance = getPositions(vault)
 

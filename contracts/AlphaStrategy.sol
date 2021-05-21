@@ -86,10 +86,9 @@ contract AlphaStrategy {
     function rebalance() external {
         require(msg.sender == keeper, "keeper");
 
-        (, int24 tick, , , , , ) = pool.slot0();
-
         // Check price is not too close to min/max allowed by Uniswap. Price
         // shouldn't be this extreme unless something was wrong with the pool.
+        int24 tick = getTick();
         int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
         require(tick > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
         require(tick < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
@@ -115,6 +114,10 @@ contract AlphaStrategy {
 
         // Not used for calculations but stored so can be queried
         lastTick = tick;
+    }
+
+    function getTick() public view returns (int24 tick) {
+        (, tick, , , , , ) = pool.slot0();
     }
 
     /// @dev Fetches time-weighted average price from Uniswap pool.
