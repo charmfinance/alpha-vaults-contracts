@@ -9,10 +9,11 @@ def test_vault_governance_methods(
     randomToken = gov.deploy(MockToken, "a", "a", 18)
     randomToken.mint(vault, 1e18, {"from": gov})
     with reverts("governance"):
-        vault.sweep(randomToken, 1e18, {"from": user})
+        vault.sweep(randomToken, {"from": user})
     balance = randomToken.balanceOf(gov)
-    vault.sweep(randomToken, 1e18, {"from": gov})
+    vault.sweep(randomToken, {"from": gov})
     assert randomToken.balanceOf(gov) == balance + 1e18
+    assert randomToken.balanceOf(vault) == 0
 
     # Check setting protocol fee
     with reverts("governance"):

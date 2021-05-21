@@ -377,6 +377,16 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         total1 = _balance1().add(baseAmount1).add(limitAmount1);
     }
 
+    /// @dev Amount of token0 held as unused balance.
+    function _balance0() internal view returns (uint256) {
+        return token0.balanceOf(address(this)).sub(accruedProtocolFees0);
+    }
+
+    /// @dev Amount of token1 held as unused balance.
+    function _balance1() internal view returns (uint256) {
+        return token1.balanceOf(address(this)).sub(accruedProtocolFees1);
+    }
+
     /// @dev Amount of liquidity in vault's position.
     function _positionLiquidity(int24 tickLower, int24 tickUpper)
         internal
@@ -400,34 +410,6 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         (amount0, amount1) = _amountsForLiquidity(tickLower, tickUpper, liquidity);
         amount0 = amount0.add(uint256(tokensOwed0));
         amount1 = amount1.add(uint256(tokensOwed1));
-    }
-
-    /// @dev Amount of token0 held as unused balance.
-    function _balance0() internal view returns (uint256) {
-        return token0.balanceOf(address(this)).sub(accruedProtocolFees0);
-    }
-
-    /// @dev Amount of token1 held as unused balance.
-    function _balance1() internal view returns (uint256) {
-        return token1.balanceOf(address(this)).sub(accruedProtocolFees1);
-    }
-
-    /// @dev Callback for Uniswap V3 pool.
-    function uniswapV3MintCallback(
-        uint256 amount0,
-        uint256 amount1,
-        bytes calldata data
-    ) external override {
-        require(msg.sender == address(pool));
-        address payer = abi.decode(data, (address));
-
-        if (payer == address(this)) {
-            if (amount0 > 0) token0.safeTransfer(msg.sender, amount0);
-            if (amount1 > 0) token1.safeTransfer(msg.sender, amount1);
-        } else {
-            if (amount0 > 0) token0.safeTransferFrom(payer, msg.sender, amount0);
-            if (amount1 > 0) token1.safeTransferFrom(payer, msg.sender, amount1);
-        }
     }
 
     /// @dev Wrapper around `LiquidityAmounts.getAmountsForLiquidity()`.
@@ -474,6 +456,24 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         return uint128(x);
     }
 
+    /// @dev Callback for Uniswap V3 pool.
+    function uniswapV3MintCallback(
+        uint256 amount0,
+        uint256 amount1,
+        bytes calldata data
+    ) external override {
+        require(msg.sender == address(pool));
+        address payer = abi.decode(data, (address));
+
+        if (payer == address(this)) {
+            if (amount0 > 0) token0.safeTransfer(msg.sender, amount0);
+            if (amount1 > 0) token1.safeTransfer(msg.sender, amount1);
+        } else {
+            if (amount0 > 0) token0.safeTransferFrom(payer, msg.sender, amount0);
+            if (amount1 > 0) token1.safeTransferFrom(payer, msg.sender, amount1);
+        }
+    }
+
     /**
      * @notice Used to collect accumulated protocol fees.
      */
@@ -491,9 +491,9 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     /**
      * @notice Removes tokens accidentally sent to this vault.
      */
-    function sweep(IERC20 token, uint256 amount) external onlyGovernance {
+    function sweep(IERC20 token) external onlyGovernance {
         require(token != token0 && token != token1, "token");
-        token.safeTransfer(msg.sender, amount);
+        token.safeTransfer(msg.sender, token.balanceOf(address(this)));
     }
 
     /**
