@@ -160,6 +160,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     {
         uint256 totalSupply = totalSupply();
         (uint256 total0, uint256 total1) = getTotalAmounts();
+        assert(totalSupply == 0 || total0 > 0 || total1 > 0);
+
         if (totalSupply == 0) {
             // For first deposit, just use the amounts desired
             amount0 = amount0Desired;
