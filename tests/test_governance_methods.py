@@ -138,14 +138,6 @@ def test_strategy_governance_methods(vault, strategy, gov, user, recipient):
     strategy.setLimitThreshold(600, {"from": gov})
     assert strategy.limitThreshold() == 600
 
-    # Check setting min last tick deviation
-    with reverts("governance"):
-        strategy.setMinLastTickDeviation(1000, {"from": user})
-    with reverts("minLastTickDeviation"):
-        strategy.setMinLastTickDeviation(-1, {"from": gov})
-    strategy.setMinLastTickDeviation(1000, {"from": gov})
-    assert strategy.minLastTickDeviation() == 1000
-
     # Check setting max twap deviation
     with reverts("governance"):
         strategy.setMaxTwapDeviation(1000, {"from": user})

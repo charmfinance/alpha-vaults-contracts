@@ -90,7 +90,7 @@ def vault(AlphaVault, AlphaStrategy, pool, router, tokens, gov, users, keeper):
     # limitThreshold = 1200
     # maxTwapDeviation = 200000 (just a big number)
     # twapDuration = 600 (10 minutes)
-    strategy = gov.deploy(AlphaStrategy, vault, 2400, 1200, 0, 200000, 600, keeper)
+    strategy = gov.deploy(AlphaStrategy, vault, 2400, 1200, 200000, 600, keeper)
     vault.setStrategy(strategy, {"from": gov})
 
     yield vault
