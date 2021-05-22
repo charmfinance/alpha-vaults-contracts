@@ -45,3 +45,14 @@ def test_total_amounts_includes_fees(
     # Check total amounts grew due to fees
     assert total0After > total0
     assert total1After > total1
+
+
+def test_total_amounts_before_rebalance(
+        vault, user):
+    total0, total1 = vault.getTotalAmounts()
+    assert total0 == total1 == 0
+
+    vault.deposit(1e8, 1e10, 0, 0, user, {"from": user})
+    total0, total1 = vault.getTotalAmounts()
+    assert total0 == 1e8
+    assert total1 == 1e10
