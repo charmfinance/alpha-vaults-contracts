@@ -13,16 +13,16 @@ def test_constructor(AlphaStrategy, vault, gov, keeper):
 
 
 def test_constructor_checks(AlphaStrategy, vault, gov, keeper):
-    with reverts("threshold not tick multiple"):
+    with reverts("threshold % tickSpacing"):
         gov.deploy(AlphaStrategy, vault, 2401, 1200, 500, 600, keeper)
 
-    with reverts("threshold not tick multiple"):
+    with reverts("threshold % tickSpacing"):
         gov.deploy(AlphaStrategy, vault, 2400, 1201, 500, 600, keeper)
 
-    with reverts("threshold not positive"):
+    with reverts("threshold > 0"):
         gov.deploy(AlphaStrategy, vault, 0, 1200, 500, 600, keeper)
 
-    with reverts("threshold not positive"):
+    with reverts("threshold > 0"):
         gov.deploy(AlphaStrategy, vault, 2400, 0, 500, 600, keeper)
 
     with reverts("threshold too high"):

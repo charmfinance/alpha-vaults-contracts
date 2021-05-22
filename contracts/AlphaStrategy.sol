@@ -90,8 +90,8 @@ contract AlphaStrategy {
         // shouldn't be this extreme unless something was wrong with the pool.
         int24 tick = getTick();
         int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
-        require(tick > TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
-        require(tick < TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
+        require(tick > TickMath.MIN_TICK + maxThreshold + tickSpacing, "tick too low");
+        require(tick < TickMath.MAX_TICK - maxThreshold - tickSpacing, "tick too high");
 
         // Check price has not moved a lot recently. This mitigates price
         // manipulation during rebalance and also prevents placing orders
@@ -141,9 +141,9 @@ contract AlphaStrategy {
 
     /// @dev Checks threshold is sensible.
     function _checkThreshold(int24 threshold) internal view {
-        require(threshold > 0, "threshold not positive");
+        require(threshold > 0, "threshold > 0");
         require(threshold < TickMath.MAX_TICK, "threshold too high");
-        require(threshold % tickSpacing == 0, "threshold not tick multiple");
+        require(threshold % tickSpacing == 0, "threshold % tickSpacing");
     }
 
     function setKeeper(address _keeper) external onlyGovernance {

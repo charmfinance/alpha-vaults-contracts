@@ -117,9 +117,9 @@ def test_strategy_governance_methods(vault, strategy, gov, user, recipient):
     # Check setting base threshold
     with reverts("governance"):
         strategy.setBaseThreshold(0, {"from": user})
-    with reverts("threshold not tick multiple"):
+    with reverts("threshold % tickSpacing"):
         strategy.setBaseThreshold(2401, {"from": gov})
-    with reverts("threshold not positive"):
+    with reverts("threshold > 0"):
         strategy.setBaseThreshold(0, {"from": gov})
     with reverts("threshold too high"):
         strategy.setBaseThreshold(887280, {"from": gov})
@@ -129,9 +129,9 @@ def test_strategy_governance_methods(vault, strategy, gov, user, recipient):
     # Check setting limit threshold
     with reverts("governance"):
         strategy.setLimitThreshold(0, {"from": user})
-    with reverts("threshold not tick multiple"):
+    with reverts("threshold % tickSpacing"):
         strategy.setLimitThreshold(1201, {"from": gov})
-    with reverts("threshold not positive"):
+    with reverts("threshold > 0"):
         strategy.setLimitThreshold(0, {"from": gov})
     with reverts("threshold too high"):
         strategy.setLimitThreshold(887280, {"from": gov})

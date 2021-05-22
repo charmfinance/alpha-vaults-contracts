@@ -141,9 +141,45 @@ def test_can_rebalance_when_vault_empty(
     assert strategy.lastTick() == tick
 
 
-def test_only_strategy_can_rebalance(vault, strategy, pool, gov, user, keeper):
+def test_rebalance_checks(vault, strategy, pool, gov, user, keeper):
+    with reverts("tickLower < tickUpper"):
+        vault.rebalance(600, 600, 0, 60, 0, 60, {"from": strategy})
+    with reverts("tickLower < tickUpper"):
+        vault.rebalance(0, 60, 600, 600, 0, 60, {"from": strategy})
+    with reverts("tickLower < tickUpper"):
+        vault.rebalance(0, 60, 0, 60, 600, 600, {"from": strategy})
+
+    with reverts("tickLower too low"):
+        vault.rebalance(-887280, 60, 0, 60, 0, 60, {"from": strategy})
+    with reverts("tickLower too low"):
+        vault.rebalance(0, 60, -887280, 60, 0, 60, {"from": strategy})
+    with reverts("tickLower too low"):
+        vault.rebalance(0, 60, 0, 60, -887280, 60, {"from": strategy})
+
+    with reverts("tickUpper too high"):
+        vault.rebalance(0, 887280, 0, 60, 0, 60, {"from": strategy})
+    with reverts("tickUpper too high"):
+        vault.rebalance(0, 60, 0, 887280, 0, 60, {"from": strategy})
+    with reverts("tickUpper too high"):
+        vault.rebalance(0, 60, 0, 60, 0, 887280, {"from": strategy})
+
+    with reverts("tickLower % tickSpacing"):
+        vault.rebalance(1, 60, 0, 60, 0, 60, {"from": strategy})
+    with reverts("tickLower % tickSpacing"):
+        vault.rebalance(0, 60, 1, 60, 0, 60, {"from": strategy})
+    with reverts("tickLower % tickSpacing"):
+        vault.rebalance(0, 60, 0, 60, 1, 60, {"from": strategy})
+
+    with reverts("tickUpper % tickSpacing"):
+        vault.rebalance(0, 61, 0, 60, 0, 60, {"from": strategy})
+    with reverts("tickUpper % tickSpacing"):
+        vault.rebalance(0, 60, 0, 61, 0, 60, {"from": strategy})
+    with reverts("tickUpper % tickSpacing"):
+        vault.rebalance(0, 60, 0, 60, 0, 61, {"from": strategy})
+
     for u in [gov, user, keeper]:
         with reverts("strategy"):
-            vault.rebalance(0, 0, 0, 0, 0, 0, {"from": u})
+            vault.rebalance(0, 60, 0, 60, 0, 60, {"from": u})
 
-    vault.rebalance(0, 0, 0, 0, 0, 0, {"from": strategy})
+    vault.rebalance(0, 60, 0, 60, 0, 60, {"from": strategy})
+    vault.rebalance(-6000, 6000, -6000, 6000, -6000, 6000, {"from": strategy})

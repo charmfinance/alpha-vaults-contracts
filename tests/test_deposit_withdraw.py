@@ -213,7 +213,7 @@ def test_deposit_when_vault_only_has_token1(
 
 
 def test_deposit_checks(vault, user):
-    with reverts("amounts"):
+    with reverts("amount0Desired or amount1Desired"):
         vault.deposit(0, 0, 0, 0, user, {"from": user})
     with reverts("to"):
         vault.deposit(1e8, 1e8, 0, 0, ZERO_ADDRESS, {"from": user})

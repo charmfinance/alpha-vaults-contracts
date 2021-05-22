@@ -52,6 +52,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     IUniswapV3Pool public pool;
     IERC20 public immutable token0;
     IERC20 public immutable token1;
+    int24 public immutable tickSpacing;
 
     uint256 public protocolFee;
     uint256 public maxTotalSupply;
@@ -81,6 +82,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         pool = IUniswapV3Pool(_pool);
         token0 = IERC20(pool.token0());
         token1 = IERC20(pool.token1());
+        tickSpacing = pool.tickSpacing();
 
         protocolFee = _protocolFee;
         maxTotalSupply = _maxTotalSupply;
@@ -120,7 +122,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             uint256 amount1
         )
     {
-        require(amount0Desired > 0 || amount1Desired > 0, "amounts");
+        require(amount0Desired > 0 || amount1Desired > 0, "amount0Desired or amount1Desired");
         require(to != address(0) && to != address(this), "to");
 
         // Do zero-burns to poke the Uniswap pools so earned fees are updated
@@ -274,6 +276,9 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         int24 _askUpper
     ) external nonReentrant {
         require(msg.sender == strategy, "strategy");
+        _checkRange(_baseLower, _baseUpper);
+        _checkRange(_bidLower, _bidUpper);
+        _checkRange(_askLower, _askUpper);
 
         // Withdraw all current liquidity from Uniswap pool
         _burnAllLiquidity(baseLower, baseUpper);
@@ -304,6 +309,15 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             _mintLiquidity(_askLower, _askUpper, askLiquidity);
             (limitLower, limitUpper) = (_askLower, _askUpper);
         }
+    }
+
+    function _checkRange(int24 tickLower, int24 tickUpper) internal view {
+        int24 _tickSpacing = tickSpacing;
+        require(tickLower < tickUpper, "tickLower < tickUpper");
+        require(tickLower >= TickMath.MIN_TICK, "tickLower too low");
+        require(tickUpper <= TickMath.MAX_TICK, "tickUpper too high");
+        require(tickLower % _tickSpacing == 0, "tickLower % tickSpacing");
+        require(tickUpper % _tickSpacing == 0, "tickUpper % tickSpacing");
     }
 
     /// @dev Withdraws all liquidity in a range from Uniswap pool and collects
@@ -354,7 +368,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         int24 tickUpper,
         uint128 liquidity
     ) internal {
-        if (tickLower < tickUpper && liquidity > 0) {
+        if (liquidity > 0) {
             pool.mint(
                 address(this),
                 tickLower,
