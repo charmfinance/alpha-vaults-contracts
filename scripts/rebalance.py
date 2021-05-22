@@ -1,9 +1,11 @@
-from brownie import accounts, PassiveRebalanceVault
+from brownie import accounts, AlphaStrategy
 from brownie.network.gas.strategies import GasNowScalingStrategy
 import os
 
 
-VAULT = "0xb52f322f7534d60807700bd8414d3c498d4cef52"
+STRATEGIES = [
+    "0xA80336a05268Fe975480768FdBD88aB758398e69",
+]
 
 
 def getAccount(account, pw):
@@ -14,15 +16,30 @@ def getAccount(account, pw):
 
 
 def main():
-    keeper = getAccount(os.environ["KEEPER_ACCOUNT"], os.environ["KEEPER_PW"])
-    # keeper = accounts.load(input("Brownie account: "))
+    # keeper = getAccount(os.environ["KEEPER_ACCOUNT"], os.environ["KEEPER_PW"])
+    keeper = accounts.load(input("Brownie account: "))
 
     gas_strategy = GasNowScalingStrategy()
 
     balance = keeper.balance()
 
-    vault = PassiveRebalanceVault.at(VAULT)
-    vault.rebalance({"from": keeper, "gas_price": gas_strategy})
+    for address in STRATEGIES:
+        print(f"Running for strategy: {address}")
+        strategy = AlphaStrategy.at(address)
+
+        tick = strategy.getTick()
+        lastTick = strategy.lastTick()
+        print(f"Tick: {tick}")
+        print(f"Last tick: {lastTick}")
+
+        # shouldRebalance = abs(tick - lastTick) > strategy.limitThreshold() // 4
+        shouldRebalance = abs(tick - lastTick) > 200
+
+        if shouldRebalance:
+            print("Rebalancing...")
+            strategy.rebalance({"from": keeper, "gas_price": gas_strategy})
+        else:
+            print("Deviation too low so skipping")
 
     print(f"Gas used: {(balance - keeper.balance()) / 1e18:.4f} ETH")
     print(f"New balance: {keeper.balance() / 1e18:.4f} ETH")
