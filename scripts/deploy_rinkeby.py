@@ -23,7 +23,6 @@ BASE_THRESHOLD = 1800
 LIMIT_THRESHOLD = 600
 MAX_TWAP_DEVIATION = 100
 TWAP_DURATION = 60
-KEEPER = ZERO_ADDRESS
 
 
 def main():
@@ -72,7 +71,7 @@ def main():
         LIMIT_THRESHOLD,
         MAX_TWAP_DEVIATION,
         TWAP_DURATION,
-        KEEPER,
+        deployer,
         publish_source=True,
     )
     vault.setStrategy(strategy, {"from": deployer})
