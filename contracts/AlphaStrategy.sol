@@ -111,8 +111,6 @@ contract AlphaStrategy {
             tickCeil,
             tickCeil + limitThreshold
         );
-
-        // Not used for calculations but stored so can be queried
         lastTick = tick;
     }
 

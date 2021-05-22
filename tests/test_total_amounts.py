@@ -47,8 +47,7 @@ def test_total_amounts_includes_fees(
     assert total1After > total1
 
 
-def test_total_amounts_before_rebalance(
-        vault, user):
+def test_total_amounts_before_rebalance(vault, user):
     total0, total1 = vault.getTotalAmounts()
     assert total0 == total1 == 0
 

@@ -432,16 +432,14 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         int24 tickUpper,
         uint128 liquidity
     ) internal view returns (uint256, uint256) {
-        if (tickLower < tickUpper) {
-            (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
-            return
-                LiquidityAmounts.getAmountsForLiquidity(
-                    sqrtRatioX96,
-                    TickMath.getSqrtRatioAtTick(tickLower),
-                    TickMath.getSqrtRatioAtTick(tickUpper),
-                    liquidity
-                );
-        }
+        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
+        return
+            LiquidityAmounts.getAmountsForLiquidity(
+                sqrtRatioX96,
+                TickMath.getSqrtRatioAtTick(tickLower),
+                TickMath.getSqrtRatioAtTick(tickUpper),
+                liquidity
+            );
     }
 
     /// @dev Wrapper around `LiquidityAmounts.getLiquidityForAmounts()`.
@@ -451,17 +449,15 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint256 amount0,
         uint256 amount1
     ) internal view returns (uint128) {
-        if (tickLower < tickUpper) {
-            (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
-            return
-                LiquidityAmounts.getLiquidityForAmounts(
-                    sqrtRatioX96,
-                    TickMath.getSqrtRatioAtTick(tickLower),
-                    TickMath.getSqrtRatioAtTick(tickUpper),
-                    amount0,
-                    amount1
-                );
-        }
+        (uint160 sqrtRatioX96, , , , , , ) = pool.slot0();
+        return
+            LiquidityAmounts.getLiquidityForAmounts(
+                sqrtRatioX96,
+                TickMath.getSqrtRatioAtTick(tickLower),
+                TickMath.getSqrtRatioAtTick(tickUpper),
+                amount0,
+                amount1
+            );
     }
 
     /// @dev Casts uint256 to uint128 with overflow check.
