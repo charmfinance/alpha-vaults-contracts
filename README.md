@@ -1,6 +1,9 @@
 ## Alpha Vaults
 
-This repository contains the smart contracts for the Alpha Vaults protocol.
+This repository contains the smart contracts for the [Alpha Vaults](https://alpha.charm.fi/) protocol.
+
+Feel free to [join our discord](https://discord.gg/6BY3Fq2) if you have any questions.
+
 
 ### Usage
 
@@ -24,3 +27,8 @@ To deploy, modify the parameters in `scripts/deploy_mainnet.py` and run:
 To trigger a rebalance, run:
 
 `brownie run rebalance`
+
+
+### Bug Bounty
+
+We have a bug bounty program hosted on Immunefi. Please visit [our bounty page](https://immunefi.com/bounty/charm/) for more details
