@@ -300,9 +300,10 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         }
         (baseLower, baseUpper) = (_baseLower, _baseUpper);
 
-        // Place bid or ask order on Uniswap depending on which token is left
         balance0 = _balance0();
         balance1 = _balance1();
+
+        // Place bid or ask order on Uniswap depending on which token is left
         uint128 bidLiquidity = _liquidityForAmounts(_bidLower, _bidUpper, balance0, balance1);
         uint128 askLiquidity = _liquidityForAmounts(_askLower, _askUpper, balance0, balance1);
         if (bidLiquidity > askLiquidity) {
