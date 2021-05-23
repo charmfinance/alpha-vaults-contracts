@@ -162,6 +162,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     {
         uint256 totalSupply = totalSupply();
         (uint256 total0, uint256 total1) = getTotalAmounts();
+
+        // If total supply > 0, vault can't be empty
         assert(totalSupply == 0 || total0 > 0 || total1 > 0);
 
         if (totalSupply == 0) {
@@ -176,8 +178,6 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             amount0 = amount0Desired;
             shares = amount0.mul(totalSupply).div(total0);
         } else {
-            // If total supply > 0, at least one of `total0` and `total1`
-            // should be > 0
             uint256 cross = Math.min(amount0Desired.mul(total1), amount1Desired.mul(total0));
             require(cross > 0, "cross");
 
@@ -190,9 +190,9 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     /**
      * @notice Withdraws tokens in proportion to the vault's holdings.
-     * @dev The necessary amount of liquidity is removed from Uniswap. This
-     * costs more gas but means there doesn't have to be a buffer of unused
-     * tokens for withdrawals.
+     * @dev Removes necessary amount of liquidity from Uniswap. This means it
+     * doesn't have to hold spare tokens for withdrawals. Also note it doesn't
+     * poke positions to save gas.
      * @param shares Shares burned by sender
      * @param amount0Min Revert if resulting `amount0` is smaller than this
      * @param amount1Min Revert if resulting `amount1` is smaller than this
@@ -282,7 +282,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
         (, int24 tick, , , , , ) = pool.slot0();
         require(_bidUpper <= tick, "bidUpper");
-        require(_askLower >= tick, "askLower");
+        require(_askLower > tick, "askLower");
 
         // Withdraw all current liquidity from Uniswap pool
         _burnAllLiquidity(baseLower, baseUpper);
@@ -298,13 +298,11 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         _mintLiquidity(_baseLower, _baseUpper, liquidity);
         (baseLower, baseUpper) = (_baseLower, _baseUpper);
 
-        // Calculate on which side it should place the limit order
+        // Place bid or ask order on Uniswap
         balance0 = _balance0();
         balance1 = _balance1();
         uint128 bidLiquidity = _liquidityForAmounts(_bidLower, _bidUpper, balance0, balance1);
         uint128 askLiquidity = _liquidityForAmounts(_askLower, _askUpper, balance0, balance1);
-
-        // Place bid or ask order on Uniswap
         if (bidLiquidity > askLiquidity) {
             _mintLiquidity(_bidLower, _bidUpper, bidLiquidity);
             (limitLower, limitUpper) = (_bidLower, _bidUpper);
@@ -367,13 +365,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint128 liquidity
     ) internal {
         if (liquidity > 0) {
-            pool.mint(
-                address(this),
-                tickLower,
-                tickUpper,
-                liquidity,
-                abi.encode(address(this))
-            );
+            pool.mint(address(this), tickLower, tickUpper, liquidity, "");
         }
     }
 
@@ -471,15 +463,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         bytes calldata data
     ) external override {
         require(msg.sender == address(pool));
-        address payer = abi.decode(data, (address));
-
-        if (payer == address(this)) {
-            if (amount0 > 0) token0.safeTransfer(msg.sender, amount0);
-            if (amount1 > 0) token1.safeTransfer(msg.sender, amount1);
-        } else {
-            if (amount0 > 0) token0.safeTransferFrom(payer, msg.sender, amount0);
-            if (amount1 > 0) token1.safeTransferFrom(payer, msg.sender, amount1);
-        }
+        if (amount0 > 0) token0.safeTransfer(msg.sender, amount0);
+        if (amount1 > 0) token1.safeTransfer(msg.sender, amount1);
     }
 
     /**
@@ -499,9 +484,13 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     /**
      * @notice Removes tokens accidentally sent to this vault.
      */
-    function sweep(IERC20 token) external onlyGovernance {
+    function sweep(
+        IERC20 token,
+        uint256 amount,
+        address to
+    ) external onlyGovernance {
         require(token != token0 && token != token1, "token");
-        token.safeTransfer(msg.sender, token.balanceOf(address(this)));
+        token.safeTransfer(to, amount);
     }
 
     /**
