@@ -280,6 +280,10 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         _checkRange(_bidLower, _bidUpper);
         _checkRange(_askLower, _askUpper);
 
+        (, int24 tick, , , , , ) = pool.slot0();
+        require(_bidUpper <= tick, "bidUpper");
+        require(_askLower >= tick, "askLower");
+
         // Withdraw all current liquidity from Uniswap pool
         _burnAllLiquidity(baseLower, baseUpper);
         _burnAllLiquidity(limitLower, limitUpper);
@@ -287,7 +291,6 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         // Emit snapshot to record balances and supply
         uint256 balance0 = _balance0();
         uint256 balance1 = _balance1();
-        (, int24 tick, , , , , ) = pool.slot0();
         emit Snapshot(tick, balance0, balance1, totalSupply());
 
         // Place base order on Uniswap
