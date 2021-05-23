@@ -11,8 +11,6 @@ from math import floor, sqrt
 import time
 
 
-UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0")
-
 # Uniswap v3 factory on Rinkeby
 FACTORY = "0xAE28628c0fdFb5e54d60FEDC6C9085199aec14dF"
 
@@ -27,6 +25,7 @@ TWAP_DURATION = 60
 
 def main():
     deployer = accounts.load("deployer")
+    UniswapV3Core = project.load("Uniswap/uniswap-v3-core@1.0.0")
 
     eth = deployer.deploy(MockToken, "ETH", "ETH", 18)
     usdc = deployer.deploy(MockToken, "USDC", "USDC", 6)

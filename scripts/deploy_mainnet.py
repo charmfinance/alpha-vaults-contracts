@@ -36,6 +36,7 @@ def main():
         KEEPER,
         publish_source=True,
     )
+    vault.setStrategy(strategy, {"from": deployer})
 
     print(f"Gas used: {(balance - deployer.balance()) / 1e18:.4f} ETH")
     print(f"Vault address: {vault.address}")
