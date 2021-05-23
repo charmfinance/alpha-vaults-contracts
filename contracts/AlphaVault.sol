@@ -325,34 +325,29 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     /// @dev Withdraws all liquidity in a range from Uniswap pool and collects
     /// all fees in the process.
-    function _burnAllLiquidity(int24 tickLower, int24 tickUpper)
-        internal
-        returns (
-            uint256 owed0,
-            uint256 owed1,
-            uint256 collect0,
-            uint256 collect1
-        )
-    {
+    function _burnAllLiquidity(int24 tickLower, int24 tickUpper) internal {
         // Burn all liquidity in this range
+        uint256 owed0 = 0;
+        uint256 owed1 = 0;
         uint128 liquidity = _positionLiquidity(tickLower, tickUpper);
         if (liquidity > 0) {
             (owed0, owed1) = pool.burn(tickLower, tickUpper, liquidity);
         }
 
         // Collect all owed tokens including earned fees
-        (collect0, collect1) = pool.collect(
-            address(this),
-            tickLower,
-            tickUpper,
-            type(uint128).max,
-            type(uint128).max
-        );
+        (uint256 collect0, uint256 collect1) =
+            pool.collect(
+                address(this),
+                tickLower,
+                tickUpper,
+                type(uint128).max,
+                type(uint128).max
+            );
 
         uint256 feesFromPool0 = collect0.sub(owed0);
         uint256 feesFromPool1 = collect1.sub(owed1);
-        uint256 feesToProtocol0;
-        uint256 feesToProtocol1;
+        uint256 feesToProtocol0 = 0;
+        uint256 feesToProtocol1 = 0;
 
         // Update accrued protocol fees
         uint256 _protocolFee = protocolFee;
