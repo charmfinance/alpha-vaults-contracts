@@ -190,9 +190,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     /**
      * @notice Withdraws tokens in proportion to the vault's holdings.
-     * @dev Removes necessary amount of liquidity from Uniswap. This means it
-     * doesn't have to hold spare tokens for withdrawals. Also note it doesn't
-     * poke positions to save gas.
+     * @dev Removes proportional amount of liquidity from Uniswap. Note it
+     * doesn't collect share of fees since last rebalance to save gas.
      * @param shares Shares burned by sender
      * @param amount0Min Revert if resulting `amount0` is smaller than this
      * @param amount1Min Revert if resulting `amount1` is smaller than this
