@@ -43,6 +43,8 @@ contract AlphaStrategy {
     int24 public maxTwapDeviation;
     uint32 public twapDuration;
     address public keeper;
+
+    uint256 public lastRebalance;
     int24 public lastTick;
 
     /**
@@ -111,6 +113,8 @@ contract AlphaStrategy {
             tickCeil,
             tickCeil + limitThreshold
         );
+
+        lastRebalance = block.timestamp;
         lastTick = tick;
     }
 

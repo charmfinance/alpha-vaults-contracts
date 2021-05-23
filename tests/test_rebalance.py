@@ -52,6 +52,8 @@ def test_rebalance(
     else:
         assert vault.limitLower() == tickFloor - 1200
         assert vault.limitUpper() == tickFloor
+
+    assert strategy.lastRebalance() == tx.timestamp
     assert strategy.lastTick() == tick
     assert strategy.getTick() == tick
 
@@ -129,7 +131,7 @@ def test_can_rebalance_when_vault_empty(
     assert tokens[0].balanceOf(vault) == 0
     assert tokens[1].balanceOf(vault) == 0
     strategy.rebalance({"from": keeper})
-    strategy.rebalance({"from": keeper})
+    tx = strategy.rebalance({"from": keeper})
 
     # Check ranges are set correctly
     tick = pool.slot0()[1]
@@ -138,6 +140,8 @@ def test_can_rebalance_when_vault_empty(
     assert vault.baseUpper() == tickFloor + 60 + 2400
     assert vault.limitLower() == tickFloor + 60
     assert vault.limitUpper() == tickFloor + 60 + 1200
+
+    assert strategy.lastRebalance() == tx.timestamp
     assert strategy.lastTick() == tick
 
 
