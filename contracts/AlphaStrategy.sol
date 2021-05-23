@@ -118,11 +118,12 @@ contract AlphaStrategy {
         lastTick = tick;
     }
 
+    /// @dev Fetches current price in ticks from Uniswap pool.
     function getTick() public view returns (int24 tick) {
         (, tick, , , , , ) = pool.slot0();
     }
 
-    /// @dev Fetches time-weighted average price from Uniswap pool.
+    /// @dev Fetches time-weighted average price in ticks from Uniswap pool.
     function getTwap() public view returns (int24) {
         uint32 _twapDuration = twapDuration;
         uint32[] memory secondsAgo = new uint32[](2);
@@ -141,7 +142,6 @@ contract AlphaStrategy {
         return compressed * tickSpacing;
     }
 
-    /// @dev Checks threshold is sensible.
     function _checkThreshold(int24 threshold) internal view {
         require(threshold > 0, "threshold > 0");
         require(threshold < TickMath.MAX_TICK, "threshold too high");
