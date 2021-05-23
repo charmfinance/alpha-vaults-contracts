@@ -177,9 +177,17 @@ def test_rebalance_checks(vault, strategy, pool, gov, user, keeper):
     with reverts("tickUpper % tickSpacing"):
         vault.rebalance(0, 60, 0, 60, 0, 61, {"from": strategy})
 
+    with reverts("bidUpper"):
+        vault.rebalance(
+            -60000, 60000, -120000, 60000, 60000, 120000, {"from": strategy}
+        )
+    with reverts("askLower"):
+        vault.rebalance(
+            -60000, 60000, -120000, -60000, -60000, 120000, {"from": strategy}
+        )
+
     for u in [gov, user, keeper]:
         with reverts("strategy"):
             vault.rebalance(0, 60, 0, 60, 0, 60, {"from": u})
 
-    vault.rebalance(0, 60, 0, 60, 0, 60, {"from": strategy})
-    vault.rebalance(-6000, 6000, -6000, 6000, -6000, 6000, {"from": strategy})
+    vault.rebalance(-60000, 60000, -120000, -60000, 60000, 120000, {"from": strategy})

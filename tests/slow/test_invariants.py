@@ -108,8 +108,8 @@ def test_rebalance(
     strategy.rebalance({"from": keeper})
 
     # Check leftover balances is low
-    assert tokens[0].balanceOf(vault) - vault.protocolFees0() < 10000
-    assert tokens[1].balanceOf(vault) - vault.protocolFees1() < 10000
+    assert tokens[0].balanceOf(vault) - vault.accruedProtocolFees0() < 10000
+    assert tokens[1].balanceOf(vault) - vault.accruedProtocolFees1() < 10000
 
     # Check total amounts haven't changed
     newTotal0, newTotal1 = vault.getTotalAmounts()
@@ -159,8 +159,8 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     assert amount1Deposit >= amount1Withdraw
 
     # Check amounts are roughly equal
-    assert approx(amount0Deposit, rel=1e-3) == amount0Withdraw
-    assert approx(amount1Deposit, rel=1e-3) == amount1Withdraw
+    assert approx(amount0Deposit, rel=1e-2) == amount0Withdraw
+    assert approx(amount1Deposit, rel=1e-2) == amount1Withdraw
 
 
 @given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
