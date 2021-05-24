@@ -16,7 +16,9 @@ def main():
     balance = keeper.balance()
 
     pool = UniswapV3Core.interface.IUniswapV3Pool(POOL)
-    pool.increaseObservationCardinalityNext(CARDINALITY, {"from": deployer, "gas_price": gas_strategy})
+    pool.increaseObservationCardinalityNext(
+        CARDINALITY, {"from": deployer, "gas_price": gas_strategy}
+    )
 
     print(f"Gas used: {(balance - keeper.balance()) / 1e18:.4f} ETH")
     print(f"New balance: {keeper.balance() / 1e18:.4f} ETH")

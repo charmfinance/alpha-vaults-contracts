@@ -46,17 +46,27 @@ def main():
     price = 1e18 / 2000e6 if inverse else 2000e6 / 1e18
 
     # Set ETH/USDC price to 2000
-    pool.initialize(floor(sqrt(price) * (1 << 96)), {"from": deployer, "gas_price": gas_strategy})
+    pool.initialize(
+        floor(sqrt(price) * (1 << 96)), {"from": deployer, "gas_price": gas_strategy}
+    )
 
     # Increase cardinality so TWAP works
-    pool.increaseObservationCardinalityNext(100, {"from": deployer, "gas_price": gas_strategy})
+    pool.increaseObservationCardinalityNext(
+        100, {"from": deployer, "gas_price": gas_strategy}
+    )
 
     router = deployer.deploy(TestRouter)
-    MockToken.at(eth).approve(router, 1 << 255, {"from": deployer, "gas_price": gas_strategy})
-    MockToken.at(usdc).approve(router, 1 << 255, {"from": deployer, "gas_price": gas_strategy})
+    MockToken.at(eth).approve(
+        router, 1 << 255, {"from": deployer, "gas_price": gas_strategy}
+    )
+    MockToken.at(usdc).approve(
+        router, 1 << 255, {"from": deployer, "gas_price": gas_strategy}
+    )
 
     max_tick = 887272 // 60 * 60
-    router.mint(pool, -max_tick, max_tick, 1e14, {"from": deployer, "gas_price": gas_strategy})
+    router.mint(
+        pool, -max_tick, max_tick, 1e14, {"from": deployer, "gas_price": gas_strategy}
+    )
 
     vault = deployer.deploy(
         AlphaVault,
