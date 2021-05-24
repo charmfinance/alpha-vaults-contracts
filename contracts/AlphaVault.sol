@@ -294,9 +294,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
         // Place base order on Uniswap
         uint128 liquidity = _liquidityForAmounts(_baseLower, _baseUpper, balance0, balance1);
-        if (liquidity > 0) {
-            pool.mint(address(this), _baseLower, _baseUpper, liquidity, "");
-        }
+        _mintLiquidity(_baseLower, _baseUpper, liquidity);
         (baseLower, baseUpper) = (_baseLower, _baseUpper);
 
         balance0 = _balance0();
@@ -306,12 +304,10 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint128 bidLiquidity = _liquidityForAmounts(_bidLower, _bidUpper, balance0, balance1);
         uint128 askLiquidity = _liquidityForAmounts(_askLower, _askUpper, balance0, balance1);
         if (bidLiquidity > askLiquidity) {
-            pool.mint(address(this), _bidLower, _bidUpper, bidLiquidity, "");
+            _mintLiquidity(_bidLower, _bidUpper, bidLiquidity);
             (limitLower, limitUpper) = (_bidLower, _bidUpper);
         } else {
-            if (askLiquidity > 0) {
-                pool.mint(address(this), _askLower, _askUpper, askLiquidity, "");
-            }
+            _mintLiquidity(_askLower, _askUpper, askLiquidity);
             (limitLower, limitUpper) = (_askLower, _askUpper);
         }
     }
@@ -360,6 +356,17 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             accruedProtocolFees1 = accruedProtocolFees1.add(feesToProtocol1);
         }
         emit CollectFees(feesFromPool0, feesFromPool1, feesToProtocol0, feesToProtocol1);
+    }
+
+    /// @dev Deposits liquidity in a range on the Uniswap pool.
+    function _mintLiquidity(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity
+    ) internal {
+        if (liquidity > 0) {
+            pool.mint(address(this), tickLower, tickUpper, liquidity, "");
+        }
     }
 
     /**
