@@ -1,4 +1,4 @@
-from brownie import accounts, AlphaVault
+from brownie import accounts, AlphaVault, AlphaStrategy
 
 
 # POOL = "0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"  # USDC / ETH
@@ -25,7 +25,6 @@ def main():
         MAX_TOTAL_SUPPLY,
         publish_source=True,
     )
-
     strategy = deployer.deploy(
         AlphaStrategy,
         vault,

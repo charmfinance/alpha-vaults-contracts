@@ -4,7 +4,7 @@ import os
 
 
 STRATEGIES = [
-    "0xA80336a05268Fe975480768FdBD88aB758398e69",
+    "0x40C36799490042b31Efc4D3A7F8BDe5D3cB03526",
 ]
 
 
@@ -16,8 +16,8 @@ def getAccount(account, pw):
 
 
 def main():
-    # keeper = getAccount(os.environ["KEEPER_ACCOUNT"], os.environ["KEEPER_PW"])
-    keeper = accounts.load(input("Brownie account: "))
+    keeper = getAccount(os.environ["KEEPER_ACCOUNT"], os.environ["KEEPER_PW"])
+    # keeper = accounts.load(input("Brownie account: "))
 
     gas_strategy = GasNowScalingStrategy()
 
