@@ -18,10 +18,9 @@ def getAccount(account, pw):
 def main():
     keeper = getAccount(os.environ["KEEPER_ACCOUNT"], os.environ["KEEPER_PW"])
     # keeper = accounts.load(input("Brownie account: "))
+    balance = keeper.balance()
 
     gas_strategy = GasNowScalingStrategy()
-
-    balance = keeper.balance()
 
     for address in STRATEGIES:
         print(f"Running for strategy: {address}")

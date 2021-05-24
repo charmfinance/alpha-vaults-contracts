@@ -1,4 +1,5 @@
 from brownie import accounts, AlphaVault, AlphaStrategy
+from brownie.network.gas.strategies import GasNowScalingStrategy
 
 
 # POOL = "0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"  # USDC / ETH
@@ -18,12 +19,15 @@ def main():
     deployer = accounts.load("deployer")
     balance = deployer.balance()
 
+    gas_strategy = GasNowScalingStrategy()
+
     vault = deployer.deploy(
         AlphaVault,
         POOL,
         PROTOCOL_FEE,
         MAX_TOTAL_SUPPLY,
         publish_source=True,
+        gas_price=gas_strategy,
     )
     strategy = deployer.deploy(
         AlphaStrategy,
@@ -34,8 +38,9 @@ def main():
         TWAP_DURATION,
         KEEPER,
         publish_source=True,
+        gas_price=gas_strategy,
     )
-    vault.setStrategy(strategy, {"from": deployer})
+    vault.setStrategy(strategy, {"from": deployer, "gas_price": gas_strategy})
 
     print(f"Gas used: {(balance - deployer.balance()) / 1e18:.4f} ETH")
     print(f"Vault address: {vault.address}")
