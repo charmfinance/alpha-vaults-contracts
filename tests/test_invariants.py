@@ -2,15 +2,24 @@ from brownie.test import given, strategy
 from hypothesis import settings
 from pytest import approx
 
-MAX_EXAMPLES = 5
+
+MAX_EXAMPLES = 5  # faster
+# MAX_EXAMPLES = 50
 
 
-@given(amount0Desired=strategy("uint256", min_value=0, max_value=1e18))
-@given(amount1Desired=strategy("uint256", min_value=0, max_value=1e18))
-@given(buy=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
+def getPrice(pool):
+    sqrtPrice = pool.slot0()[0] / (1 << 96)
+    return sqrtPrice ** 2
+
+
+@given(
+    amount0Desired=strategy("uint256", min_value=0, max_value=1e18),
+    amount1Desired=strategy("uint256", min_value=0, max_value=1e18),
+    buy=strategy("bool"),
+    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+)
 @settings(max_examples=MAX_EXAMPLES)
-def test_deposit(
+def test_deposit_invariants(
     vault,
     strategy,
     pool,
@@ -41,9 +50,9 @@ def test_deposit(
     totalSupply = vault.totalSupply()
 
     # Ignore when output shares is 0:
-    if amount1Desired == 0 and total1 > 0:
+    if amount1Desired < 2 and total1 > 0:
         return
-    if amount0Desired == 0 and total0 > 0:
+    if amount0Desired < 2 and total0 > 0:
         return
 
     # Deposit
@@ -58,22 +67,24 @@ def test_deposit(
     assert amount0 == amount0Desired or amount1 == amount1Desired
 
     # Check ratios stay the same
-    if amount0Desired > 1000 and amount1Desired > 1000:
-        assert approx(amount0 * total1, rel=1e-4) == amount1 * total0
-        assert approx(amount0 * totalSupply, rel=1e-4) == shares * total0
-        assert approx(amount1 * totalSupply, rel=1e-4) == shares * total1
+    if amount0 > 1e6 and amount1 > 1e6:
+        assert approx(amount1 * total0) == amount0 * total1
+        assert approx(amount0 * totalSupply) == shares * total0
+        assert approx(amount1 * totalSupply) == shares * total1
 
     # Check doesn't under-pay
     assert amount0 * totalSupply >= shares * total0
     assert amount1 * totalSupply >= shares * total1
 
 
-@given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(buy=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
+@given(
+    amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    buy=strategy("bool"),
+    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+)
 @settings(max_examples=MAX_EXAMPLES)
-def test_rebalance(
+def test_rebalance_invariants(
     vault,
     strategy,
     pool,
@@ -119,10 +130,12 @@ def test_rebalance(
     assert total1 - 2 <= newTotal1 <= total1
 
 
-@given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(buy=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
+@given(
+    amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    buy=strategy("bool"),
+    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+)
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     vault,
@@ -163,12 +176,15 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     assert approx(amount1Deposit, rel=1e-2) == amount1Withdraw
 
 
-@given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(buy=strategy("bool"))
-@given(buy2=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
-@given(qty2=strategy("uint256", min_value=1e3, max_value=1e18))
+@given(
+    amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    buy=strategy("bool"),
+    buy2=strategy("bool"),
+    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty2=strategy("uint256", min_value=1e3, max_value=1e18),
+    manipulateBack=strategy("bool"),
+)
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_manipulated_deposit(
     vault,
@@ -185,7 +201,9 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     qty,
     buy2,
     qty2,
+    manipulateBack,
 ):
+
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 
@@ -194,9 +212,11 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     strategy.rebalance({"from": keeper})
     router.swap(pool, buy, qty, {"from": user})
 
-    # Store initial balances
+    # Store balances and totals before
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
+    total0, total1 = vault.getTotalAmounts()
+    price = getPrice(pool)
 
     # Manipulate
     router.swap(pool, buy2, qty2, {"from": user})
@@ -206,27 +226,37 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     shares, _, _ = tx.return_value
 
     # Manipulate price back
-    router.swap(pool, not buy2, -qty2 * 0.997, {"from": user})
+    if manipulateBack:
+        router.swap(pool, not buy2, -qty2 * 0.997, {"from": user})
 
     # Withdraw all
     vault.withdraw(shares, 0, 0, user, {"from": user})
-    price = 1.0001 ** pool.slot0()[1]
 
+    # Store balances and totals after
     balance0After = tokens[0].balanceOf(user)
     balance1After = tokens[1].balanceOf(user)
+    total0After, total1After = vault.getTotalAmounts()
 
-    # Check did not make a profit
-    value = balance0 * price + balance1
-    valueAfter = balance0After * price + balance1After
-    assert value >= valueAfter
+    # Check attacker did not make a profit
+    dbalance0 = balance0After - balance0
+    dbalance1 = balance1After - balance1
+    assert dbalance0 * price + dbalance1 <= 0
+
+    # Check vault can't be griefed
+    dtotal0 = total0After - total0
+    dtotal1 = total1After - total1
+    assert dtotal0 * price + dtotal1 >= -1000
 
 
-@given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(buy=strategy("bool"))
-@given(buy2=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
-@given(qty2=strategy("uint256", min_value=1e3, max_value=1e18))
+@given(
+    amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    buy=strategy("bool"),
+    buy2=strategy("bool"),
+    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty2=strategy("uint256", min_value=1e3, max_value=1e18),
+    manipulateBack=strategy("bool"),
+)
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_manipulated_withdraw(
     vault,
@@ -243,6 +273,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     qty,
     buy2,
     qty2,
+    manipulateBack,
 ):
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
@@ -255,34 +286,46 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     # Store initial balances
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
+    total0, total1 = vault.getTotalAmounts()
+    price = getPrice(pool)
 
     # Deposit
     tx = vault.deposit(amount0Desired, amount1Desired, 0, 0, user, {"from": user})
     shares, _, _ = tx.return_value
-    price = 1.0001 ** pool.slot0()[1]
 
     # Manipulate
     router.swap(pool, buy2, qty2, {"from": user})
 
     # Withdraw all
     vault.withdraw(shares, 0, 0, user, {"from": user})
-    priceAfter = 1.0001 ** pool.slot0()[1]
+
+    # Manipulate back
+    if manipulateBack:
+        router.swap(pool, not buy2, -qty2, {"from": user})
 
     balance0After = tokens[0].balanceOf(user)
     balance1After = tokens[1].balanceOf(user)
+    total0After, total1After = vault.getTotalAmounts()
 
-    # Check did not make a profit
-    value = balance0 * price + balance1
-    valueAfter = balance0After * price + balance1After
-    assert value >= valueAfter
+    # Check attacker did not make a profit
+    dbalance0 = balance0After - balance0
+    dbalance1 = balance1After - balance1
+    assert dbalance0 * price + dbalance1 <= 0
+
+    # Check vault can't be griefed
+    dtotal0 = total0After - total0
+    dtotal1 = total1After - total1
+    assert dtotal0 * price + dtotal1 >= -1000
 
 
-@given(amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18))
-@given(buy=strategy("bool"))
-@given(buy2=strategy("bool"))
-@given(qty=strategy("uint256", min_value=1e3, max_value=1e18))
-@given(qty2=strategy("uint256", min_value=1e3, max_value=1e18))
+@given(
+    amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    buy=strategy("bool"),
+    buy2=strategy("bool"),
+    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty2=strategy("uint256", min_value=1e3, max_value=1e18),
+)
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_around_rebalance(
     vault,

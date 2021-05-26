@@ -12,11 +12,7 @@ otherwise imports don't work.
 
 `brownie pm clone Uniswap/uniswap-v3-periphery@1.0.0`
 
-Run tests excluding slow property-based tests
-
-`brownie test --ignore=tests/slow`
-
-Run all tests
+Run tests
 
 `brownie test`
 
