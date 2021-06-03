@@ -1,7 +1,7 @@
+from _pytest.monkeypatch import MonkeyPatch
 from brownie.test import given, strategy
-from hypothesis import settings
+from hypothesis import HealthCheck, settings
 from pytest import approx
-
 
 MAX_EXAMPLES = 5  # faster
 # MAX_EXAMPLES = 50
@@ -18,7 +18,7 @@ def getPrice(pool):
     buy=strategy("bool"),
     qty=strategy("uint256", min_value=1e3, max_value=1e18),
 )
-@settings(max_examples=MAX_EXAMPLES)
+@settings(max_examples=MAX_EXAMPLES, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_deposit_invariants(
     vault,
     strategy,
@@ -83,7 +83,7 @@ def test_deposit_invariants(
     buy=strategy("bool"),
     qty=strategy("uint256", min_value=1e3, max_value=1e18),
 )
-@settings(max_examples=MAX_EXAMPLES)
+@settings(max_examples=MAX_EXAMPLES, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_rebalance_invariants(
     vault,
     strategy,
@@ -136,7 +136,7 @@ def test_rebalance_invariants(
     buy=strategy("bool"),
     qty=strategy("uint256", min_value=1e3, max_value=1e18),
 )
-@settings(max_examples=MAX_EXAMPLES)
+@settings(max_examples=MAX_EXAMPLES, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     vault,
     strategy,
@@ -185,7 +185,7 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     qty2=strategy("uint256", min_value=1e3, max_value=1e18),
     manipulateBack=strategy("bool"),
 )
-@settings(max_examples=MAX_EXAMPLES)
+@settings(max_examples=MAX_EXAMPLES, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_cannot_make_instant_profit_from_manipulated_deposit(
     vault,
     strategy,
@@ -257,7 +257,7 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     qty2=strategy("uint256", min_value=1e3, max_value=1e18),
     manipulateBack=strategy("bool"),
 )
-@settings(max_examples=MAX_EXAMPLES)
+@settings(max_examples=MAX_EXAMPLES, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_cannot_make_instant_profit_from_manipulated_withdraw(
     vault,
     strategy,
@@ -326,7 +326,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     qty=strategy("uint256", min_value=1e3, max_value=1e18),
     qty2=strategy("uint256", min_value=1e3, max_value=1e18),
 )
-@settings(max_examples=MAX_EXAMPLES)
+@settings(max_examples=MAX_EXAMPLES, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_cannot_make_instant_profit_around_rebalance(
     vault,
     strategy,
