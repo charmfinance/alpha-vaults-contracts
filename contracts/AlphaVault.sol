@@ -125,13 +125,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         require(amount0Desired > 0 || amount1Desired > 0, "amount0Desired or amount1Desired");
         require(to != address(0) && to != address(this), "to");
 
-        // Do zero-burns to poke the Uniswap pools so earned fees are updated
-        if (_positionLiquidity(baseLower, baseUpper) > 0) {
-            pool.burn(baseLower, baseUpper, 0);
-        }
-        if (_positionLiquidity(limitLower, limitUpper) > 0) {
-            pool.burn(limitLower, limitUpper, 0);
-        }
+        _poke(baseLower, baseUpper);
+        _poke(limitLower, limitUpper);
 
         (shares, amount0, amount1) = _calcSharesAndAmounts(amount0Desired, amount1Desired);
         require(shares > 0, "shares");
@@ -146,6 +141,13 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         _mint(to, shares);
         emit Deposit(msg.sender, to, shares, amount0, amount1);
         require(totalSupply() <= maxTotalSupply, "maxTotalSupply");
+    }
+
+    /// @dev Do zero-burns to poke the Uniswap pools so earned fees are updated
+    function _poke(int24 tickLower, int24 tickUpper) internal {
+        if (_positionLiquidity(tickLower, tickUpper) > 0) {
+            pool.burn(tickLower, tickUpper, 0);
+        }
     }
 
     // @dev Calculates the largest possible `amount0` and `amount1` such that
