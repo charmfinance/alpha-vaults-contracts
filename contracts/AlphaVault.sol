@@ -49,7 +49,7 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     event Snapshot(int24 tick, uint256 totalAmount0, uint256 totalAmount1, uint256 totalSupply);
 
-    IUniswapV3Pool public pool;
+    IUniswapV3Pool public immutable pool;
     IERC20 public immutable token0;
     IERC20 public immutable token1;
     int24 public immutable tickSpacing;
@@ -80,9 +80,9 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint256 _maxTotalSupply
     ) ERC20("Alpha Vault", "AV") {
         pool = IUniswapV3Pool(_pool);
-        token0 = IERC20(pool.token0());
-        token1 = IERC20(pool.token1());
-        tickSpacing = pool.tickSpacing();
+        token0 = IERC20(IUniswapV3Pool(_pool).token0());
+        token1 = IERC20(IUniswapV3Pool(_pool).token1());
+        tickSpacing = IUniswapV3Pool(_pool).tickSpacing();
 
         protocolFee = _protocolFee;
         maxTotalSupply = _maxTotalSupply;
