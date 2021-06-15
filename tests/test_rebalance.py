@@ -83,14 +83,16 @@ def test_rebalance(
     dtotal0 = total0After - total0 + ev1["feesToProtocol0"] + ev2["feesToProtocol0"]
     dtotal1 = total1After - total1 + ev1["feesToProtocol1"] + ev2["feesToProtocol1"]
     assert (
-        approx(ev1["feesFromPool0"] + ev2["feesFromPool0"], rel=1e-6, abs=1) == dtotal0
+        approx(ev1["feesToVault0"] + ev2["feesToVault0"], rel=1e-6, abs=1)
+        == dtotal0 * 0.99
     )
     assert (
         approx(ev1["feesToProtocol0"] + ev2["feesToProtocol0"], rel=1e-6, abs=1)
         == dtotal0 * 0.01
     )
     assert (
-        approx(ev1["feesFromPool1"] + ev2["feesFromPool1"], rel=1e-6, abs=1) == dtotal1
+        approx(ev1["feesToVault1"] + ev2["feesToVault1"], rel=1e-6, abs=1)
+        == dtotal1 * 0.99
     )
     assert (
         approx(ev1["feesToProtocol1"] + ev2["feesToProtocol1"], rel=1e-6, abs=1)

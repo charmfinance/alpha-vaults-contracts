@@ -41,8 +41,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     );
 
     event CollectFees(
-        uint256 feesFromPool0,
-        uint256 feesFromPool1,
+        uint256 feesToVault0,
+        uint256 feesToVault1,
         uint256 feesToProtocol0,
         uint256 feesToProtocol1
     );
@@ -145,7 +145,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     /// @dev Do zero-burns to poke the Uniswap pools so earned fees are updated
     function _poke(int24 tickLower, int24 tickUpper) internal {
-        if (_positionLiquidity(tickLower, tickUpper) > 0) {
+        (uint128 liquidity, , , , ) = _position(tickLower, tickUpper);
+        if (liquidity > 0) {
             pool.burn(tickLower, tickUpper, 0);
         }
     }
@@ -209,55 +210,48 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     ) external override nonReentrant returns (uint256 amount0, uint256 amount1) {
         require(shares > 0, "shares");
         require(to != address(0) && to != address(this), "to");
-
-        // Withdraw proportion of liquidity from Uniswap pool and push
-        // resulting tokens to recipient directly
-        (uint256 baseAmount0, uint256 baseAmount1) =
-            _burnLiquidityShare(baseLower, baseUpper, shares, to);
-        (uint256 limitAmount0, uint256 limitAmount1) =
-            _burnLiquidityShare(limitLower, limitUpper, shares, to);
-
-        // Push tokens proportional to unused balances
         uint256 totalSupply = totalSupply();
+
+        // Calculate token amounts proportional to unused balances
         uint256 unusedAmount0 = _balance0().mul(shares).div(totalSupply);
         uint256 unusedAmount1 = _balance1().mul(shares).div(totalSupply);
-        if (unusedAmount0 > 0) token0.safeTransfer(to, unusedAmount0);
-        if (unusedAmount1 > 0) token1.safeTransfer(to, unusedAmount1);
 
-        // Sum up total amounts sent to recipient
-        amount0 = baseAmount0.add(limitAmount0).add(unusedAmount0);
-        amount1 = baseAmount1.add(limitAmount1).add(unusedAmount1);
+        // Withdraw proportion of liquidity from Uniswap pool
+        (uint256 baseAmount0, uint256 baseAmount1) =
+            _burnLiquidityShare(baseLower, baseUpper, shares, totalSupply);
+        (uint256 limitAmount0, uint256 limitAmount1) =
+            _burnLiquidityShare(limitLower, limitUpper, shares, totalSupply);
+
+        // Sum up total amounts and push tokens to recipient
+        amount0 = unusedAmount0.add(baseAmount0).add(limitAmount0);
+        amount1 = unusedAmount1.add(baseAmount1).add(limitAmount1);
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
+        if (amount0 > 0) token0.safeTransfer(to, amount0);
+        if (amount1 > 0) token1.safeTransfer(to, amount1);
 
         // Burn shares
         _burn(msg.sender, shares);
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
     }
 
-    /// @dev Withdraws share of liquidity in a range from Uniswap pool. Doesn't
-    /// collect earned fees. Reverts if total supply is 0.
+    /// @dev Withdraws share of liquidity in a range from Uniswap pool.
     function _burnLiquidityShare(
         int24 tickLower,
         int24 tickUpper,
         uint256 shares,
-        address to
+        uint256 totalSupply
     ) internal returns (uint256 amount0, uint256 amount1) {
-        uint128 position = _positionLiquidity(tickLower, tickUpper);
-        uint256 liquidity = uint256(position).mul(shares).div(totalSupply());
+        (uint128 totalLiquidity, , , , ) = _position(tickLower, tickUpper);
+        uint256 liquidity = uint256(totalLiquidity).mul(shares).div(totalSupply);
 
         if (liquidity > 0) {
-            (amount0, amount1) = pool.burn(tickLower, tickUpper, _toUint128(liquidity));
+            (uint256 burned0, uint256 burned1, uint256 fees0, uint256 fees1) =
+                _burnAndCollect(tickLower, tickUpper, _toUint128(liquidity));
 
-            if (amount0 > 0 || amount1 > 0) {
-                (amount0, amount1) = pool.collect(
-                    to,
-                    tickLower,
-                    tickUpper,
-                    _toUint128(amount0),
-                    _toUint128(amount1)
-                );
-            }
+            // Add share of fees
+            amount0 = burned0.add(fees0.mul(shares).div(totalSupply));
+            amount1 = burned1.add(fees1.mul(shares).div(totalSupply));
         }
     }
 
@@ -286,8 +280,10 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         require(_askLower > tick, "askLower"); // inequality is strict as tick is rounded down
 
         // Withdraw all current liquidity from Uniswap pool
-        _burnAllLiquidity(baseLower, baseUpper);
-        _burnAllLiquidity(limitLower, limitUpper);
+        (uint128 baseLiquidity, , , , ) = _position(baseLower, baseUpper);
+        (uint128 limitLiquidity, , , , ) = _position(limitLower, limitUpper);
+        _burnAndCollect(baseLower, baseUpper, baseLiquidity);
+        _burnAndCollect(limitLower, limitUpper, limitLiquidity);
 
         // Emit snapshot to record balances and supply
         uint256 balance0 = _balance0();
@@ -323,15 +319,23 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         require(tickUpper % _tickSpacing == 0, "tickUpper % tickSpacing");
     }
 
-    /// @dev Withdraws all liquidity in a range from Uniswap pool and collects
-    /// all fees in the process.
-    function _burnAllLiquidity(int24 tickLower, int24 tickUpper) internal {
-        // Burn all liquidity in this range
-        uint256 owed0 = 0;
-        uint256 owed1 = 0;
-        uint128 liquidity = _positionLiquidity(tickLower, tickUpper);
+    /// @dev Withdraws liquidity from a range and collects all fees in the
+    /// process.
+    function _burnAndCollect(
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 liquidity
+    )
+        internal
+        returns (
+            uint256 burned0,
+            uint256 burned1,
+            uint256 feesToVault0,
+            uint256 feesToVault1
+        )
+    {
         if (liquidity > 0) {
-            (owed0, owed1) = pool.burn(tickLower, tickUpper, liquidity);
+            (burned0, burned1) = pool.burn(tickLower, tickUpper, liquidity);
         }
 
         // Collect all owed tokens including earned fees
@@ -344,20 +348,22 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
                 type(uint128).max
             );
 
-        uint256 feesFromPool0 = collect0.sub(owed0);
-        uint256 feesFromPool1 = collect1.sub(owed1);
+        feesToVault0 = collect0.sub(burned0);
+        feesToVault1 = collect1.sub(burned1);
         uint256 feesToProtocol0 = 0;
         uint256 feesToProtocol1 = 0;
 
         // Update accrued protocol fees
         uint256 _protocolFee = protocolFee;
         if (_protocolFee > 0) {
-            feesToProtocol0 = feesFromPool0.mul(_protocolFee).div(1e6);
-            feesToProtocol1 = feesFromPool1.mul(_protocolFee).div(1e6);
+            feesToProtocol0 = feesToVault0.mul(_protocolFee).div(1e6);
+            feesToProtocol1 = feesToVault1.mul(_protocolFee).div(1e6);
+            feesToVault0 = feesToVault0.sub(feesToProtocol0);
+            feesToVault1 = feesToVault1.sub(feesToProtocol1);
             accruedProtocolFees0 = accruedProtocolFees0.add(feesToProtocol0);
             accruedProtocolFees1 = accruedProtocolFees1.add(feesToProtocol1);
         }
-        emit CollectFees(feesFromPool0, feesFromPool1, feesToProtocol0, feesToProtocol1);
+        emit CollectFees(feesToVault0, feesToVault1, feesToProtocol0, feesToProtocol1);
     }
 
     /// @dev Deposits liquidity in a range on the Uniswap pool.
@@ -393,29 +399,34 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         return token1.balanceOf(address(this)).sub(accruedProtocolFees1);
     }
 
-    /// @dev Amount of liquidity in vault's position.
-    function _positionLiquidity(int24 tickLower, int24 tickUpper)
-        internal
-        view
-        returns (uint128 liquidity)
-    {
-        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
-        (liquidity, , , , ) = pool.positions(positionKey);
-    }
-
     /// @dev Amounts of token0 and token1 held in vault's position.
     function _positionAmounts(int24 tickLower, int24 tickUpper)
         internal
         view
         returns (uint256 amount0, uint256 amount1)
     {
-        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
         (uint128 liquidity, , , uint128 tokensOwed0, uint128 tokensOwed1) =
-            pool.positions(positionKey);
+            _position(tickLower, tickUpper);
 
         (amount0, amount1) = _amountsForLiquidity(tickLower, tickUpper, liquidity);
         amount0 = amount0.add(uint256(tokensOwed0));
         amount1 = amount1.add(uint256(tokensOwed1));
+    }
+
+    /// @dev Wrapper around `IUniswapV3Pool.positions()`.
+    function _position(int24 tickLower, int24 tickUpper)
+        internal
+        view
+        returns (
+            uint128,
+            uint256,
+            uint256,
+            uint128,
+            uint128
+        )
+    {
+        bytes32 positionKey = PositionKey.compute(address(this), tickLower, tickUpper);
+        return pool.positions(positionKey);
     }
 
     /// @dev Wrapper around `LiquidityAmounts.getAmountsForLiquidity()`.

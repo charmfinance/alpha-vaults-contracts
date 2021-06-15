@@ -172,8 +172,8 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     assert amount1Deposit >= amount1Withdraw
 
     # Check amounts are roughly equal
-    assert approx(amount0Deposit, rel=1e-2) == amount0Withdraw
-    assert approx(amount1Deposit, rel=1e-2) == amount1Withdraw
+    assert approx(amount0Deposit, abs=1000) == amount0Withdraw
+    assert approx(amount1Deposit, abs=1000) == amount1Withdraw
 
 
 @given(
@@ -245,7 +245,7 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     # Check vault can't be griefed
     dtotal0 = total0After - total0
     dtotal1 = total1After - total1
-    assert dtotal0 * price + dtotal1 >= -1000
+    assert dtotal0 * price + dtotal1 >= 0
 
 
 @given(
@@ -315,7 +315,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     # Check vault can't be griefed
     dtotal0 = total0After - total0
     dtotal1 = total1After - total1
-    assert dtotal0 * price + dtotal1 >= -1000
+    assert dtotal0 * price + dtotal1 >= 0
 
 
 @given(
