@@ -149,7 +149,7 @@ contract AlphaStrategy {
         return compressed * tickSpacing;
     }
 
-    function _checkThreshold(int24 threshold, int24 _tickSpacing) internal view {
+    function _checkThreshold(int24 threshold, int24 _tickSpacing) internal pure {
         require(threshold > 0, "threshold > 0");
         require(threshold <= TickMath.MAX_TICK, "threshold too high");
         require(threshold % _tickSpacing == 0, "threshold % tickSpacing");

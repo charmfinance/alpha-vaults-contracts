@@ -151,9 +151,9 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         }
     }
 
-    // @dev Calculates the largest possible `amount0` and `amount1` such that
-    // they're in the same proportion as total amounts, but not greater than
-    // `amount0Desired` and `amount1Desired` respectively.
+    /// @dev Calculates the largest possible `amount0` and `amount1` such that
+    /// they're in the same proportion as total amounts, but not greater than
+    /// `amount0Desired` and `amount1Desired` respectively.
     function _calcSharesAndAmounts(uint256 amount0Desired, uint256 amount1Desired)
         internal
         view
@@ -193,8 +193,6 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
     /**
      * @notice Withdraws tokens in proportion to the vault's holdings.
-     * @dev Removes proportional amount of liquidity from Uniswap. Note it
-     * doesn't collect share of fees since last rebalance to save gas.
      * @param shares Shares burned by sender
      * @param amount0Min Revert if resulting `amount0` is smaller than this
      * @param amount1Min Revert if resulting `amount1` is smaller than this
@@ -222,11 +220,13 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         (uint256 limitAmount0, uint256 limitAmount1) =
             _burnLiquidityShare(limitLower, limitUpper, shares, totalSupply);
 
-        // Sum up total amounts and push tokens to recipient
+        // Sum up total amounts owed to recipient
         amount0 = unusedAmount0.add(baseAmount0).add(limitAmount0);
         amount1 = unusedAmount1.add(baseAmount1).add(limitAmount1);
         require(amount0 >= amount0Min, "amount0Min");
         require(amount1 >= amount1Min, "amount1Min");
+
+        // Push tokens to recipient
         if (amount0 > 0) token0.safeTransfer(to, amount0);
         if (amount1 > 0) token1.safeTransfer(to, amount1);
 
@@ -390,19 +390,25 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         total1 = getBalance1().add(baseAmount1).add(limitAmount1);
     }
 
-    /// @dev Amount of token0 held as unused balance.
+    /**
+     * @notice Balance of token0 in vault not used in any position.
+     */
     function getBalance0() public view returns (uint256) {
         return token0.balanceOf(address(this)).sub(accruedProtocolFees0);
     }
 
-    /// @dev Amount of token1 held as unused balance.
+    /**
+     * @notice Balance of token1 in vault not used in any position.
+     */
     function getBalance1() public view returns (uint256) {
         return token1.balanceOf(address(this)).sub(accruedProtocolFees1);
     }
 
-    /// @dev Amounts of token0 and token1 held in vault's position. Includes
-    /// fees accrued but excludes proportion of fees that will be paid to
-    /// protocol.
+    /**
+     * @notice Amounts of token0 and token1 held in vault's position. Includes
+     * owed fees but excludes the proportion of fees that will be paid to the
+     * protocol. Doesn't include fees accrued since last poke.
+     */
     function getPositionAmounts(int24 tickLower, int24 tickUpper)
         public
         view
@@ -410,7 +416,6 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
     {
         (uint128 liquidity, , , uint128 tokensOwed0, uint128 tokensOwed1) =
             _position(tickLower, tickUpper);
-
         (amount0, amount1) = _amountsForLiquidity(tickLower, tickUpper, liquidity);
 
         // Subtract protocol fees
