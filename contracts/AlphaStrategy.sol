@@ -78,7 +78,7 @@ contract AlphaStrategy {
 
         _checkThreshold(_baseThreshold, _tickSpacing);
         _checkThreshold(_limitThreshold, _tickSpacing);
-        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+        require(_maxTwapDeviation > 0, "maxTwapDeviation");
         require(_twapDuration > 0, "twapDuration");
 
         (, lastTick, , , , , ) = _pool.slot0();
@@ -151,7 +151,7 @@ contract AlphaStrategy {
 
     function _checkThreshold(int24 threshold, int24 _tickSpacing) internal view {
         require(threshold > 0, "threshold > 0");
-        require(threshold < TickMath.MAX_TICK, "threshold too high");
+        require(threshold <= TickMath.MAX_TICK, "threshold too high");
         require(threshold % _tickSpacing == 0, "threshold % tickSpacing");
     }
 
@@ -170,7 +170,7 @@ contract AlphaStrategy {
     }
 
     function setMaxTwapDeviation(int24 _maxTwapDeviation) external onlyGovernance {
-        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+        require(_maxTwapDeviation > 0, "maxTwapDeviation");
         maxTwapDeviation = _maxTwapDeviation;
     }
 

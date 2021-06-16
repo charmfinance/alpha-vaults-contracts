@@ -350,8 +350,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
 
         feesToVault0 = collect0.sub(burned0);
         feesToVault1 = collect1.sub(burned1);
-        uint256 feesToProtocol0 = 0;
-        uint256 feesToProtocol1 = 0;
+        uint256 feesToProtocol0;
+        uint256 feesToProtocol1;
 
         // Update accrued protocol fees
         uint256 _protocolFee = protocolFee;
