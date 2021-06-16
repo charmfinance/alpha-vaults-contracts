@@ -78,6 +78,51 @@ def test_deposit_invariants(
 
 
 @given(
+    share_frac=strategy("uint256", min_value=1, max_value=1e8),
+    buy=strategy("bool"),
+    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+)
+@settings(max_examples=MAX_EXAMPLES)
+def test_withdraw_invariants(
+    vault,
+    strategy,
+    pool,
+    router,
+    gov,
+    user,
+    keeper,
+    tokens,
+    share_frac,
+    buy,
+    qty,
+):
+    # Simulate deposit and random price move
+    vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
+    strategy.rebalance({"from": keeper})
+    router.swap(pool, buy, qty, {"from": user})
+
+    # Poke Uniswap amounts owed to include fees
+    vault.deposit(100, 100, 0, 0, user, {"from": user})
+
+    # Store totals
+    total0, total1 = vault.getTotalAmounts()
+    totalSupply = vault.totalSupply()
+
+    shares = vault.balanceOf(user) * share_frac / 1e8
+    if shares == 0:
+        return
+
+    tx = vault.withdraw(shares, 0, 0, user, {"from": user})
+    withdraw0, withdraw1 = tx.return_value
+    assert approx(withdraw0 * totalSupply) == total0 * shares
+    assert approx(withdraw1 * totalSupply) == total1 * shares
+
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total0After) == total0 - withdraw0
+    assert approx(total1After) == total1 - withdraw1
+
+
+@given(
     amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
     amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
     buy=strategy("bool"),

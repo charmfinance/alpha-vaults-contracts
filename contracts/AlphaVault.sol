@@ -213,8 +213,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         uint256 totalSupply = totalSupply();
 
         // Calculate token amounts proportional to unused balances
-        uint256 unusedAmount0 = _balance0().mul(shares).div(totalSupply);
-        uint256 unusedAmount1 = _balance1().mul(shares).div(totalSupply);
+        uint256 unusedAmount0 = getBalance0().mul(shares).div(totalSupply);
+        uint256 unusedAmount1 = getBalance1().mul(shares).div(totalSupply);
 
         // Withdraw proportion of liquidity from Uniswap pool
         (uint256 baseAmount0, uint256 baseAmount1) =
@@ -286,8 +286,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         _burnAndCollect(limitLower, limitUpper, limitLiquidity);
 
         // Emit snapshot to record balances and supply
-        uint256 balance0 = _balance0();
-        uint256 balance1 = _balance1();
+        uint256 balance0 = getBalance0();
+        uint256 balance1 = getBalance1();
         emit Snapshot(tick, balance0, balance1, totalSupply());
 
         // Place base order on Uniswap
@@ -295,8 +295,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         _mintLiquidity(_baseLower, _baseUpper, liquidity);
         (baseLower, baseUpper) = (_baseLower, _baseUpper);
 
-        balance0 = _balance0();
-        balance1 = _balance1();
+        balance0 = getBalance0();
+        balance1 = getBalance1();
 
         // Place bid or ask order on Uniswap depending on which token is left
         uint128 bidLiquidity = _liquidityForAmounts(_bidLower, _bidUpper, balance0, balance1);
@@ -383,25 +383,28 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
      * all its liquidity from Uniswap.
      */
     function getTotalAmounts() public view override returns (uint256 total0, uint256 total1) {
-        (uint256 baseAmount0, uint256 baseAmount1) = _positionAmounts(baseLower, baseUpper);
-        (uint256 limitAmount0, uint256 limitAmount1) = _positionAmounts(limitLower, limitUpper);
-        total0 = _balance0().add(baseAmount0).add(limitAmount0);
-        total1 = _balance1().add(baseAmount1).add(limitAmount1);
+        (uint256 baseAmount0, uint256 baseAmount1) = getPositionAmounts(baseLower, baseUpper);
+        (uint256 limitAmount0, uint256 limitAmount1) =
+            getPositionAmounts(limitLower, limitUpper);
+        total0 = getBalance0().add(baseAmount0).add(limitAmount0);
+        total1 = getBalance1().add(baseAmount1).add(limitAmount1);
     }
 
     /// @dev Amount of token0 held as unused balance.
-    function _balance0() internal view returns (uint256) {
+    function getBalance0() public view returns (uint256) {
         return token0.balanceOf(address(this)).sub(accruedProtocolFees0);
     }
 
     /// @dev Amount of token1 held as unused balance.
-    function _balance1() internal view returns (uint256) {
+    function getBalance1() public view returns (uint256) {
         return token1.balanceOf(address(this)).sub(accruedProtocolFees1);
     }
 
-    /// @dev Amounts of token0 and token1 held in vault's position.
-    function _positionAmounts(int24 tickLower, int24 tickUpper)
-        internal
+    /// @dev Amounts of token0 and token1 held in vault's position. Includes
+    /// fees accrued but excludes proportion of fees that will be paid to
+    /// protocol.
+    function getPositionAmounts(int24 tickLower, int24 tickUpper)
+        public
         view
         returns (uint256 amount0, uint256 amount1)
     {
@@ -409,8 +412,11 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
             _position(tickLower, tickUpper);
 
         (amount0, amount1) = _amountsForLiquidity(tickLower, tickUpper, liquidity);
-        amount0 = amount0.add(uint256(tokensOwed0));
-        amount1 = amount1.add(uint256(tokensOwed1));
+
+        // Subtract protocol fees
+        uint256 oneMinusFee = uint256(1e6).sub(protocolFee);
+        amount0 = amount0.add(uint256(tokensOwed0).mul(oneMinusFee).div(1e6));
+        amount1 = amount1.add(uint256(tokensOwed1).mul(oneMinusFee).div(1e6));
     }
 
     /// @dev Wrapper around `IUniswapV3Pool.positions()`.
