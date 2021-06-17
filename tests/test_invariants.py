@@ -346,7 +346,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
 
     # Manipulate back
     if manipulateBack:
-        router.swap(pool, not buy2, -qty2, {"from": user})
+        router.swap(pool, not buy2, -qty2 * 0.997, {"from": user})
 
     balance0After = tokens[0].balanceOf(user)
     balance1After = tokens[1].balanceOf(user)
