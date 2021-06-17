@@ -113,6 +113,8 @@ contract AlphaStrategy {
         int24 tickCeil = tickFloor + tickSpacing;
 
         vault.rebalance(
+            0,
+            0,
             tickFloor - _baseThreshold,
             tickCeil + _baseThreshold,
             tickFloor - _limitThreshold,

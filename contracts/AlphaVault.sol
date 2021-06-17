@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3MintCallback.sol";
+import "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
@@ -20,7 +21,13 @@ import "../interfaces/IVault.sol";
  * @title   Alpha Vault
  * @notice  A vault that provides liquidity on Uniswap V3.
  */
-contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
+contract AlphaVault is
+    IVault,
+    IUniswapV3MintCallback,
+    IUniswapV3SwapCallback,
+    ERC20,
+    ReentrancyGuard
+{
     using SafeERC20 for IERC20;
     using SafeMath for uint256;
 
@@ -263,6 +270,8 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
      * amount is then placed as a single-sided bid or ask order.
      */
     function rebalance(
+        int256 swapAmount,
+        uint160 sqrtPriceLimitX96,
         int24 _baseLower,
         int24 _baseUpper,
         int24 _bidLower,
@@ -280,15 +289,29 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         require(_askLower > tick, "askLower"); // inequality is strict as tick is rounded down
 
         // Withdraw all current liquidity from Uniswap pool
-        (uint128 baseLiquidity, , , , ) = _position(baseLower, baseUpper);
-        (uint128 limitLiquidity, , , , ) = _position(limitLower, limitUpper);
-        _burnAndCollect(baseLower, baseUpper, baseLiquidity);
-        _burnAndCollect(limitLower, limitUpper, limitLiquidity);
+        {
+            (uint128 baseLiquidity, , , , ) = _position(baseLower, baseUpper);
+            (uint128 limitLiquidity, , , , ) = _position(limitLower, limitUpper);
+            _burnAndCollect(baseLower, baseUpper, baseLiquidity);
+            _burnAndCollect(limitLower, limitUpper, limitLiquidity);
+        }
 
         // Emit snapshot to record balances and supply
         uint256 balance0 = getBalance0();
         uint256 balance1 = getBalance1();
         emit Snapshot(tick, balance0, balance1, totalSupply());
+
+        if (swapAmount != 0) {
+            pool.swap(
+                address(this),
+                swapAmount > 0,
+                swapAmount > 0 ? swapAmount : -swapAmount,
+                sqrtPriceLimitX96,
+                ""
+            );
+            balance0 = getBalance0();
+            balance1 = getBalance1();
+        }
 
         // Place base order on Uniswap
         uint128 liquidity = _liquidityForAmounts(_baseLower, _baseUpper, balance0, balance1);
@@ -489,6 +512,17 @@ contract AlphaVault is IVault, IUniswapV3MintCallback, ERC20, ReentrancyGuard {
         require(msg.sender == address(pool));
         if (amount0 > 0) token0.safeTransfer(msg.sender, amount0);
         if (amount1 > 0) token1.safeTransfer(msg.sender, amount1);
+    }
+
+    /// @dev Callback for Uniswap V3 pool.
+    function uniswapV3SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes calldata data
+    ) external override {
+        require(msg.sender == address(pool));
+        if (amount0Delta > 0) token0.safeTransfer(msg.sender, uint256(amount0Delta));
+        if (amount1Delta > 0) token1.safeTransfer(msg.sender, uint256(amount1Delta));
     }
 
     /**
