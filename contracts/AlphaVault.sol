@@ -66,7 +66,6 @@ contract AlphaVault is
     address public strategy;
     address public governance;
     address public pendingGovernance;
-    bool public finalized;
 
     int24 public baseLower;
     int24 public baseUpper;
@@ -580,33 +579,15 @@ contract AlphaVault is
     }
 
     /**
-     * @notice Used to renounce emergency powers. Cannot be undone.
-     */
-    function finalize() external onlyGovernance {
-        finalized = true;
-    }
-
-    /**
-     * @notice Transfers tokens to governance in case of emergency. Cannot be
-     * called if already finalized.
-     */
-    function emergencyWithdraw(IERC20 token, uint256 amount) external onlyGovernance {
-        require(!finalized, "finalized");
-        token.safeTransfer(msg.sender, amount);
-    }
-
-    /**
-     * @notice Removes liquidity and transfer tokens to governance in case of
-     * emergency. Cannot be called if already finalized.
+     * @notice Removes liquidity in case of emergency.
      */
     function emergencyBurn(
         int24 tickLower,
         int24 tickUpper,
         uint128 liquidity
     ) external onlyGovernance {
-        require(!finalized, "finalized");
         pool.burn(tickLower, tickUpper, liquidity);
-        pool.collect(msg.sender, tickLower, tickUpper, type(uint128).max, type(uint128).max);
+        pool.collect(address(this), tickLower, tickUpper, type(uint128).max, type(uint128).max);
     }
 
     /**
