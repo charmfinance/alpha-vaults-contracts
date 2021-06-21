@@ -78,7 +78,7 @@ contract AlphaVault is
      * @dev After deploying, strategy needs to be set via `setStrategy()`
      * @param _pool Underlying Uniswap V3 pool
      * @param _protocolFee Protocol fee expressed as multiple of 1e-6
-     * @param _maxTotalSupply Pause deposits if total supply exceeds this
+     * @param _maxTotalSupply Cap on total supply
      */
     constructor(
         address _pool,
@@ -131,9 +131,11 @@ contract AlphaVault is
         require(amount0Desired > 0 || amount1Desired > 0, "amount0Desired or amount1Desired");
         require(to != address(0) && to != address(this), "to");
 
+        // Poke positions so vault's current holdings are up-to-date
         _poke(baseLower, baseUpper);
         _poke(limitLower, limitUpper);
 
+        // Calculate amounts proportional to vault's holdings
         (shares, amount0, amount1) = _calcSharesAndAmounts(amount0Desired, amount1Desired);
         require(shares > 0, "shares");
         require(amount0 >= amount0Min, "amount0Min");
@@ -149,7 +151,8 @@ contract AlphaVault is
         require(totalSupply() <= maxTotalSupply, "maxTotalSupply");
     }
 
-    /// @dev Do zero-burns to poke the Uniswap pools so earned fees are updated
+    /// @dev Do zero-burns to poke the positions on Uniswap so earned fees are
+    /// updated. Should be called if total amounts needs to be accurate.
     function _poke(int24 tickLower, int24 tickUpper) internal {
         (uint128 liquidity, , , , ) = _position(tickLower, tickUpper);
         if (liquidity > 0) {
