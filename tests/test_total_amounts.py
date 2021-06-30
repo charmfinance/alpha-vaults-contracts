@@ -37,7 +37,7 @@ def test_total_amounts_includes_fees(
     assert total0After > total0 or total1After > total1
 
     # Poke pool
-    vault.withdraw(1, 0, 0, user, {"from": user})
+    vault.deposit(10, 10, 0, 0, user, {"from": user})
     total0After, total1After = vault.getTotalAmounts()
     assert approx(total0After, rel=1e-2) == total0
     assert approx(total1After, rel=1e-2) == total1

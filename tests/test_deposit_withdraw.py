@@ -258,7 +258,7 @@ def test_withdraw(
     tx = vault.withdraw(shares, 0, 0, recipient, {"from": user})
     amount0, amount1 = tx.return_value
 
-    # Check doesn't hold any shares now
+    # Check is empty now
     assert vault.balanceOf(user) == 0
 
     # Check received right amount of tokens

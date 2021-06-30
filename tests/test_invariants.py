@@ -78,6 +78,51 @@ def test_deposit_invariants(
 
 
 @given(
+    share_frac=strategy("uint256", min_value=1, max_value=1e8),
+    buy=strategy("bool"),
+    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+)
+@settings(max_examples=MAX_EXAMPLES)
+def test_withdraw_invariants(
+    vault,
+    strategy,
+    pool,
+    router,
+    gov,
+    user,
+    keeper,
+    tokens,
+    share_frac,
+    buy,
+    qty,
+):
+    # Simulate deposit and random price move
+    vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
+    strategy.rebalance({"from": keeper})
+    router.swap(pool, buy, qty, {"from": user})
+
+    # Poke Uniswap amounts owed to include fees
+    vault.deposit(100, 100, 0, 0, user, {"from": user})
+
+    # Store totals
+    total0, total1 = vault.getTotalAmounts()
+    totalSupply = vault.totalSupply()
+
+    shares = vault.balanceOf(user) * share_frac / 1e8
+    if shares == 0:
+        return
+
+    tx = vault.withdraw(shares, 0, 0, user, {"from": user})
+    withdraw0, withdraw1 = tx.return_value
+    assert approx(withdraw0 * totalSupply) == total0 * shares
+    assert approx(withdraw1 * totalSupply) == total1 * shares
+
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total0After) == total0 - withdraw0
+    assert approx(total1After) == total1 - withdraw1
+
+
+@given(
     amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
     amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
     buy=strategy("bool"),
@@ -172,8 +217,8 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     assert amount1Deposit >= amount1Withdraw
 
     # Check amounts are roughly equal
-    assert approx(amount0Deposit, rel=1e-2) == amount0Withdraw
-    assert approx(amount1Deposit, rel=1e-2) == amount1Withdraw
+    assert approx(amount0Deposit, abs=1000) == amount0Withdraw
+    assert approx(amount1Deposit, abs=1000) == amount1Withdraw
 
 
 @given(
@@ -245,7 +290,7 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     # Check vault can't be griefed
     dtotal0 = total0After - total0
     dtotal1 = total1After - total1
-    assert dtotal0 * price + dtotal1 >= -1000
+    assert dtotal0 * price + dtotal1 >= 0
 
 
 @given(
@@ -301,7 +346,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
 
     # Manipulate back
     if manipulateBack:
-        router.swap(pool, not buy2, -qty2, {"from": user})
+        router.swap(pool, not buy2, -qty2 * 0.997, {"from": user})
 
     balance0After = tokens[0].balanceOf(user)
     balance1After = tokens[1].balanceOf(user)
@@ -315,7 +360,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     # Check vault can't be griefed
     dtotal0 = total0After - total0
     dtotal1 = total1After - total1
-    assert dtotal0 * price + dtotal1 >= -1000
+    assert dtotal0 * price + dtotal1 >= 0
 
 
 @given(

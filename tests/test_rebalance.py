@@ -83,14 +83,16 @@ def test_rebalance(
     dtotal0 = total0After - total0 + ev1["feesToProtocol0"] + ev2["feesToProtocol0"]
     dtotal1 = total1After - total1 + ev1["feesToProtocol1"] + ev2["feesToProtocol1"]
     assert (
-        approx(ev1["feesFromPool0"] + ev2["feesFromPool0"], rel=1e-6, abs=1) == dtotal0
+        approx(ev1["feesToVault0"] + ev2["feesToVault0"], rel=1e-6, abs=1)
+        == dtotal0 * 0.99
     )
     assert (
         approx(ev1["feesToProtocol0"] + ev2["feesToProtocol0"], rel=1e-6, abs=1)
         == dtotal0 * 0.01
     )
     assert (
-        approx(ev1["feesFromPool1"] + ev2["feesFromPool1"], rel=1e-6, abs=1) == dtotal1
+        approx(ev1["feesToVault1"] + ev2["feesToVault1"], rel=1e-6, abs=1)
+        == dtotal1 * 0.99
     )
     assert (
         approx(ev1["feesToProtocol1"] + ev2["feesToProtocol1"], rel=1e-6, abs=1)
@@ -147,51 +149,101 @@ def test_can_rebalance_when_vault_empty(
 
 def test_rebalance_checks(vault, strategy, pool, gov, user, keeper):
     with reverts("tickLower < tickUpper"):
-        vault.rebalance(600, 600, 0, 60, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 600, 600, 0, 60, 0, 60, {"from": strategy})
     with reverts("tickLower < tickUpper"):
-        vault.rebalance(0, 60, 600, 600, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 600, 600, 0, 60, {"from": strategy})
     with reverts("tickLower < tickUpper"):
-        vault.rebalance(0, 60, 0, 60, 600, 600, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 0, 60, 600, 600, {"from": strategy})
 
     with reverts("tickLower too low"):
-        vault.rebalance(-887280, 60, 0, 60, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, -887280, 60, 0, 60, 0, 60, {"from": strategy})
     with reverts("tickLower too low"):
-        vault.rebalance(0, 60, -887280, 60, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, -887280, 60, 0, 60, {"from": strategy})
     with reverts("tickLower too low"):
-        vault.rebalance(0, 60, 0, 60, -887280, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 0, 60, -887280, 60, {"from": strategy})
 
     with reverts("tickUpper too high"):
-        vault.rebalance(0, 887280, 0, 60, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 887280, 0, 60, 0, 60, {"from": strategy})
     with reverts("tickUpper too high"):
-        vault.rebalance(0, 60, 0, 887280, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 0, 887280, 0, 60, {"from": strategy})
     with reverts("tickUpper too high"):
-        vault.rebalance(0, 60, 0, 60, 0, 887280, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 0, 60, 0, 887280, {"from": strategy})
 
     with reverts("tickLower % tickSpacing"):
-        vault.rebalance(1, 60, 0, 60, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 1, 60, 0, 60, 0, 60, {"from": strategy})
     with reverts("tickLower % tickSpacing"):
-        vault.rebalance(0, 60, 1, 60, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 1, 60, 0, 60, {"from": strategy})
     with reverts("tickLower % tickSpacing"):
-        vault.rebalance(0, 60, 0, 60, 1, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 0, 60, 1, 60, {"from": strategy})
 
     with reverts("tickUpper % tickSpacing"):
-        vault.rebalance(0, 61, 0, 60, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 61, 0, 60, 0, 60, {"from": strategy})
     with reverts("tickUpper % tickSpacing"):
-        vault.rebalance(0, 60, 0, 61, 0, 60, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 0, 61, 0, 60, {"from": strategy})
     with reverts("tickUpper % tickSpacing"):
-        vault.rebalance(0, 60, 0, 60, 0, 61, {"from": strategy})
+        vault.rebalance(0, 0, 0, 60, 0, 60, 0, 61, {"from": strategy})
 
     with reverts("bidUpper"):
         vault.rebalance(
-            -60000, 60000, -120000, 60000, 60000, 120000, {"from": strategy}
+            0, 0, -60000, 60000, -120000, 60000, 60000, 120000, {"from": strategy}
         )
     with reverts("askLower"):
         vault.rebalance(
-            -60000, 60000, -120000, -60000, -60000, 120000, {"from": strategy}
+            0, 0, -60000, 60000, -120000, -60000, -60000, 120000, {"from": strategy}
         )
 
     for u in [gov, user, keeper]:
         with reverts("strategy"):
-            vault.rebalance(0, 60, 0, 60, 0, 60, {"from": u})
+            vault.rebalance(0, 0, 0, 60, 0, 60, 0, 60, {"from": u})
 
-    vault.rebalance(-60000, 60000, -120000, -60000, 60000, 120000, {"from": strategy})
+    vault.rebalance(
+        0, 0, -60000, 60000, -120000, -60000, 60000, 120000, {"from": strategy}
+    )
+
+
+def test_rebalance_swap(vault, strategy, pool, user, keeper):
+    min_sqrt = 4295128739
+    max_sqrt = 1461446703485210103287273052203988822378723970342
+
+    # Mint some liquidity
+    vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
+
+    total0, total1 = vault.getTotalAmounts()
+    vault.rebalance(
+        1e8,
+        min_sqrt + 1,
+        -60000,
+        60000,
+        -120000,
+        -60000,
+        60000,
+        120000,
+        {"from": strategy},
+    )
+
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total0 - total0After) == 1e8
+    assert total1 < total1After
+
+    price = 1.0001 ** pool.slot0()[1]
+    assert approx(total0 * price + total1) == total0After * price + total1
+
+    total0, total1 = vault.getTotalAmounts()
+    vault.rebalance(
+        -1e8,
+        max_sqrt - 1,
+        -60000,
+        60000,
+        -120000,
+        -60000,
+        60000,
+        120000,
+        {"from": strategy},
+    )
+
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total1 - total1After) == 1e8
+    assert total0 < total0After
+
+    price = 1.0001 ** pool.slot0()[1]
+    assert approx(total0 * price + total1) == total0After * price + total1

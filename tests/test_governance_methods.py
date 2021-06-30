@@ -1,4 +1,5 @@
 from brownie import reverts
+from pytest import approx
 
 
 def test_vault_governance_methods(
@@ -33,36 +34,21 @@ def test_vault_governance_methods(
     vault.setMaxTotalSupply(1 << 255, {"from": gov})
     assert vault.maxTotalSupply() == 1 << 255
 
-    # Check emergency withdraw
-    tokens[0].transfer(vault, 1e18, {"from": gov})
-    with reverts("governance"):
-        vault.emergencyWithdraw(tokens[0], 1e18, {"from": user})
-    balance = tokens[0].balanceOf(gov)
-    vault.emergencyWithdraw(tokens[0], 1e18, {"from": gov})
-    assert tokens[0].balanceOf(gov) == balance + 1e18
-
     # Check emergency burn
     vault.deposit(1e8, 1e10, 0, 0, gov, {"from": gov})
     strategy.rebalance({"from": keeper})
 
     with reverts("governance"):
         vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e4, {"from": user})
-    balance0 = tokens[0].balanceOf(gov)
-    balance1 = tokens[1].balanceOf(gov)
+    balance0 = tokens[0].balanceOf(vault)
+    balance1 = tokens[1].balanceOf(vault)
+    total0, total1 = vault.getTotalAmounts()
     vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e4, {"from": gov})
-    assert tokens[0].balanceOf(gov) > balance0
-    assert tokens[1].balanceOf(gov) > balance1
-
-    # Check finalize
-    with reverts("governance"):
-        vault.finalize({"from": user})
-    assert not vault.finalized()
-    vault.finalize({"from": gov})
-    assert vault.finalized()
-    with reverts("finalized"):
-        vault.emergencyWithdraw(tokens[0], 1e18, {"from": gov})
-    with reverts("finalized"):
-        vault.emergencyBurn(vault.baseLower(), vault.baseUpper(), 1e8, {"from": gov})
+    assert tokens[0].balanceOf(vault) > balance0
+    assert tokens[1].balanceOf(vault) > balance1
+    total0After, total1After = vault.getTotalAmounts()
+    assert approx(total0After) == total0
+    assert approx(total1After) == total1
 
     # Check setting strategy
     with reverts("governance"):

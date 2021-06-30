@@ -34,9 +34,9 @@ import "./AlphaVault.sol";
  *          fees.
  */
 contract AlphaStrategy {
-    AlphaVault public vault;
-    IUniswapV3Pool public pool;
-    int24 public tickSpacing;
+    AlphaVault public immutable vault;
+    IUniswapV3Pool public immutable pool;
+    int24 public immutable tickSpacing;
 
     int24 public baseThreshold;
     int24 public limitThreshold;
@@ -63,9 +63,12 @@ contract AlphaStrategy {
         uint32 _twapDuration,
         address _keeper
     ) {
+        IUniswapV3Pool _pool = AlphaVault(_vault).pool();
+        int24 _tickSpacing = _pool.tickSpacing();
+
         vault = AlphaVault(_vault);
-        pool = vault.pool();
-        tickSpacing = pool.tickSpacing();
+        pool = _pool;
+        tickSpacing = _tickSpacing;
 
         baseThreshold = _baseThreshold;
         limitThreshold = _limitThreshold;
@@ -73,12 +76,12 @@ contract AlphaStrategy {
         twapDuration = _twapDuration;
         keeper = _keeper;
 
-        _checkThreshold(_baseThreshold);
-        _checkThreshold(_limitThreshold);
-        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+        _checkThreshold(_baseThreshold, _tickSpacing);
+        _checkThreshold(_limitThreshold, _tickSpacing);
+        require(_maxTwapDeviation > 0, "maxTwapDeviation");
         require(_twapDuration > 0, "twapDuration");
 
-        (, lastTick, , , , , ) = pool.slot0();
+        (, lastTick, , , , , ) = _pool.slot0();
     }
 
     /**
@@ -88,10 +91,14 @@ contract AlphaStrategy {
     function rebalance() external {
         require(msg.sender == keeper, "keeper");
 
+        int24 _baseThreshold = baseThreshold;
+        int24 _limitThreshold = limitThreshold;
+
         // Check price is not too close to min/max allowed by Uniswap. Price
         // shouldn't be this extreme unless something was wrong with the pool.
         int24 tick = getTick();
-        int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
+        int24 maxThreshold =
+            _baseThreshold > _limitThreshold ? _baseThreshold : _limitThreshold;
         require(tick > TickMath.MIN_TICK + maxThreshold + tickSpacing, "tick too low");
         require(tick < TickMath.MAX_TICK - maxThreshold - tickSpacing, "tick too high");
 
@@ -106,12 +113,14 @@ contract AlphaStrategy {
         int24 tickCeil = tickFloor + tickSpacing;
 
         vault.rebalance(
-            tickFloor - baseThreshold,
-            tickCeil + baseThreshold,
-            tickFloor - limitThreshold,
+            0,
+            0,
+            tickFloor - _baseThreshold,
+            tickCeil + _baseThreshold,
+            tickFloor - _limitThreshold,
             tickFloor,
             tickCeil,
-            tickCeil + limitThreshold
+            tickCeil + _limitThreshold
         );
 
         lastRebalance = block.timestamp;
@@ -142,10 +151,10 @@ contract AlphaStrategy {
         return compressed * tickSpacing;
     }
 
-    function _checkThreshold(int24 threshold) internal view {
+    function _checkThreshold(int24 threshold, int24 _tickSpacing) internal pure {
         require(threshold > 0, "threshold > 0");
-        require(threshold < TickMath.MAX_TICK, "threshold too high");
-        require(threshold % tickSpacing == 0, "threshold % tickSpacing");
+        require(threshold <= TickMath.MAX_TICK, "threshold too high");
+        require(threshold % _tickSpacing == 0, "threshold % tickSpacing");
     }
 
     function setKeeper(address _keeper) external onlyGovernance {
@@ -153,17 +162,17 @@ contract AlphaStrategy {
     }
 
     function setBaseThreshold(int24 _baseThreshold) external onlyGovernance {
-        _checkThreshold(_baseThreshold);
+        _checkThreshold(_baseThreshold, tickSpacing);
         baseThreshold = _baseThreshold;
     }
 
     function setLimitThreshold(int24 _limitThreshold) external onlyGovernance {
-        _checkThreshold(_limitThreshold);
+        _checkThreshold(_limitThreshold, tickSpacing);
         limitThreshold = _limitThreshold;
     }
 
     function setMaxTwapDeviation(int24 _maxTwapDeviation) external onlyGovernance {
-        require(_maxTwapDeviation >= 0, "maxTwapDeviation");
+        require(_maxTwapDeviation > 0, "maxTwapDeviation");
         maxTwapDeviation = _maxTwapDeviation;
     }
 
