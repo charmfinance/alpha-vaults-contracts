@@ -151,8 +151,9 @@ contract AlphaVault is
         require(totalSupply() <= maxTotalSupply, "maxTotalSupply");
     }
 
-    /// @dev Do zero-burns to poke the positions on Uniswap so earned fees are
-    /// updated. Should be called if total amounts needs to be accurate.
+    /// @dev Do zero-burns to poke a position on Uniswap so earned fees are
+    /// updated. Should be called if total amounts needs to include up-to-date
+    /// fees.
     function _poke(int24 tickLower, int24 tickUpper) internal {
         (uint128 liquidity, , , , ) = _position(tickLower, tickUpper);
         if (liquidity > 0) {
@@ -417,20 +418,6 @@ contract AlphaVault is
     }
 
     /**
-     * @notice Balance of token0 in vault not used in any position.
-     */
-    function getBalance0() public view returns (uint256) {
-        return token0.balanceOf(address(this)).sub(accruedProtocolFees0);
-    }
-
-    /**
-     * @notice Balance of token1 in vault not used in any position.
-     */
-    function getBalance1() public view returns (uint256) {
-        return token1.balanceOf(address(this)).sub(accruedProtocolFees1);
-    }
-
-    /**
      * @notice Amounts of token0 and token1 held in vault's position. Includes
      * owed fees but excludes the proportion of fees that will be paid to the
      * protocol. Doesn't include fees accrued since last poke.
@@ -448,6 +435,20 @@ contract AlphaVault is
         uint256 oneMinusFee = uint256(1e6).sub(protocolFee);
         amount0 = amount0.add(uint256(tokensOwed0).mul(oneMinusFee).div(1e6));
         amount1 = amount1.add(uint256(tokensOwed1).mul(oneMinusFee).div(1e6));
+    }
+
+    /**
+     * @notice Balance of token0 in vault not used in any position.
+     */
+    function getBalance0() public view returns (uint256) {
+        return token0.balanceOf(address(this)).sub(accruedProtocolFees0);
+    }
+
+    /**
+     * @notice Balance of token1 in vault not used in any position.
+     */
+    function getBalance1() public view returns (uint256) {
+        return token1.balanceOf(address(this)).sub(accruedProtocolFees1);
     }
 
     /// @dev Wrapper around `IUniswapV3Pool.positions()`.
