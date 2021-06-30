@@ -219,6 +219,9 @@ contract AlphaVault is
         require(to != address(0) && to != address(this), "to");
         uint256 totalSupply = totalSupply();
 
+        // Burn shares
+        _burn(msg.sender, shares);
+
         // Calculate token amounts proportional to unused balances
         uint256 unusedAmount0 = getBalance0().mul(shares).div(totalSupply);
         uint256 unusedAmount1 = getBalance1().mul(shares).div(totalSupply);
@@ -239,8 +242,6 @@ contract AlphaVault is
         if (amount0 > 0) token0.safeTransfer(to, amount0);
         if (amount1 > 0) token1.safeTransfer(to, amount1);
 
-        // Burn shares
-        _burn(msg.sender, shares);
         emit Withdraw(msg.sender, to, shares, amount0, amount1);
     }
 
