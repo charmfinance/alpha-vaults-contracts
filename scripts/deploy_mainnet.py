@@ -1,17 +1,19 @@
-from brownie import accounts, AlphaVault, AlphaStrategy
+from brownie import accounts, AlphaVault, PassiveStrategy
 from brownie.network.gas.strategies import GasNowScalingStrategy
 
 
-# POOL = "0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"  # USDC / ETH
-POOL = "0x4e68ccd3e89f51c3074ca5072bbac773960dfa36"  # ETH / USDT
+# POOL = "0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"  # USDC / ETH / 0.3%
+POOL = "0x4e68ccd3e89f51c3074ca5072bbac773960dfa36"  # ETH / USDT / 0.3%
 
-PROTOCOL_FEE = 5000
+PROTOCOL_FEE = 5000  # 5%
 MAX_TOTAL_SUPPLY = 2e17
 
 BASE_THRESHOLD = 3600
 LIMIT_THRESHOLD = 1200
-MAX_TWAP_DEVIATION = 100
-TWAP_DURATION = 60
+PERIOD = 43200  # 12 hours
+MIN_TICK_MOVE = 0
+MAX_TWAP_DEVIATION = 100  # 1%
+TWAP_DURATION = 60  # 60 seconds
 KEEPER = "0x04c82c5791bbbdfbdda3e836ccbef567fdb2ea07"
 
 
@@ -30,10 +32,12 @@ def main():
         gas_price=gas_strategy,
     )
     strategy = deployer.deploy(
-        AlphaStrategy,
+        PassiveStrategy,
         vault,
         BASE_THRESHOLD,
         LIMIT_THRESHOLD,
+        PERIOD,
+        MIN_TICK_MOVE,
         MAX_TWAP_DEVIATION,
         TWAP_DURATION,
         KEEPER,

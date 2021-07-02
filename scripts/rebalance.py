@@ -1,10 +1,12 @@
-from brownie import accounts, AlphaStrategy
+from brownie import accounts, PassiveStrategy
 from brownie.network.gas.strategies import GasNowScalingStrategy
 import os
 
 
 STRATEGIES = [
-    "0x40C36799490042b31Efc4D3A7F8BDe5D3cB03526",
+    # "0x40C36799490042b31Efc4D3A7F8BDe5D3cB03526",  # V0 ETH/USDT
+    "0xA6803E6164EE978d8C511AfB23BA49AE0ae0C1C3",  # V1 ETH/USDC
+    "0x5503bB32a0E37A1F0B8F8FE2006abC33C779a6FD",  # V1 ETH/USDT
 ]
 
 
@@ -24,21 +26,13 @@ def main():
 
     for address in STRATEGIES:
         print(f"Running for strategy: {address}")
-        strategy = AlphaStrategy.at(address)
-
-        tick = strategy.getTick()
-        lastTick = strategy.lastTick()
-        print(f"Tick: {tick}")
-        print(f"Last tick: {lastTick}")
-
-        # shouldRebalance = abs(tick - lastTick) > strategy.limitThreshold() // 4
-        shouldRebalance = abs(tick - lastTick) > 200
-
-        if shouldRebalance:
-            print("Rebalancing...")
+        strategy = PassiveStrategy.at(address)
+        try:
             strategy.rebalance({"from": keeper, "gas_price": gas_strategy})
-        else:
-            print("Deviation too low so skipping")
+            print("Rebalanced!")
+        except ValueError as e:
+            print(e)
+        print()
 
     print(f"Gas used: {(balance - keeper.balance()) / 1e18:.4f} ETH")
     print(f"New balance: {keeper.balance() / 1e18:.4f} ETH")
