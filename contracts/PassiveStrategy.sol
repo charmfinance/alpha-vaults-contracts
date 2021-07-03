@@ -7,6 +7,7 @@ import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 
 import "./AlphaVault.sol";
+import "../interfaces/IStrategy.sol";
 
 /**
  * @title   Passive Strategy
@@ -34,7 +35,7 @@ import "./AlphaVault.sol";
  *          achieves this without the need to swap directly on Uniswap and pay
  *          fees.
  */
-contract PassiveStrategy {
+contract PassiveStrategy is IStrategy {
     using SafeMath for uint256;
 
     AlphaVault public immutable vault;
@@ -100,41 +101,68 @@ contract PassiveStrategy {
      * @notice Calculates new ranges for orders and calls `vault.rebalance()`
      * so that vault can update its positions. Can only be called by keeper.
      */
-    function rebalance() external {
-        require(msg.sender == keeper, "can only be called by keeper");
-        require(block.timestamp >= lastTimestamp.add(period), "not enough time has passed");
+    function rebalance() external override {
+        require(shouldRebalance(), "cannot rebalance");
 
-        (, int24 tick, , , , , ) = pool.slot0();
-        int24 tickMove = tick > lastTick ? tick - lastTick : lastTick - tick;
-        require(tickMove >= minTickMove, "price has not moved enough");
-
-        int24 twap = getTwap();
-        int24 twapDeviation = tick > twap ? tick - twap : twap - tick;
-        require(twapDeviation <= maxTwapDeviation, "price deviates from twap too much");
-
-        int24 _baseThreshold = baseThreshold;
-        int24 _limitThreshold = limitThreshold;
-        int24 maxThreshold =
-            _baseThreshold > _limitThreshold ? _baseThreshold : _limitThreshold;
-        require(tick >= TickMath.MIN_TICK + maxThreshold + tickSpacing, "price too low");
-        require(tick <= TickMath.MAX_TICK - maxThreshold - tickSpacing, "price too high");
-
+        int24 tick = getTick();
         int24 tickFloor = _floor(tick);
         int24 tickCeil = tickFloor + tickSpacing;
 
         vault.rebalance(
             0,
             0,
-            tickFloor - _baseThreshold,
-            tickCeil + _baseThreshold,
-            tickFloor - _limitThreshold,
+            tickFloor - baseThreshold,
+            tickCeil + baseThreshold,
+            tickFloor - limitThreshold,
             tickFloor,
             tickCeil,
-            tickCeil + _limitThreshold
+            tickCeil + limitThreshold
         );
 
         lastTimestamp = block.timestamp;
         lastTick = tick;
+    }
+
+    function shouldRebalance() public override returns (bool) {
+        // check called by keeper
+        if (msg.sender != keeper) {
+            return false;
+        }
+
+        // check enough time has passed
+        if (block.timestamp < lastTimestamp.add(period)) {
+            return false;
+        }
+
+        // check price has moved enough
+        int24 tick = getTick();
+        int24 tickMove = tick > lastTick ? tick - lastTick : lastTick - tick;
+        if (tickMove < minTickMove) {
+            return false;
+        }
+
+        // check price near twap
+        int24 twap = getTwap();
+        int24 twapDeviation = tick > twap ? tick - twap : twap - tick;
+        if (twapDeviation > maxTwapDeviation) {
+            return false;
+        }
+
+        // check price not too close to boundary
+        int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
+        if (tick < TickMath.MIN_TICK + maxThreshold + tickSpacing) {
+            return false;
+        }
+        if (tick > TickMath.MAX_TICK - maxThreshold - tickSpacing) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function getTick() public view returns (int24) {
+        (, int24 tick, , , , , ) = pool.slot0();
+        return tick;
     }
 
     /// @dev Fetches time-weighted average price in ticks from Uniswap pool.

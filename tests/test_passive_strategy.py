@@ -74,7 +74,7 @@ def test_rebalance_period_check(
     chain.sleep(86400 - 10)
 
     # Can't rebalance
-    with reverts("not enough time has passed"):
+    with reverts("cannot rebalance"):
         strategy.rebalance({"from": keeper})
 
     chain.sleep(10)
@@ -97,7 +97,7 @@ def test_rebalance_min_tick_move_check(
     strategy.setMinTickMove(100, {"from": gov})
 
     # Can't rebalance
-    with reverts("price has not moved enough"):
+    with reverts("cannot rebalance"):
         strategy.rebalance({"from": keeper})
 
     router.swap(pool, buy, 1e18, {"from": gov})
@@ -124,7 +124,7 @@ def test_rebalance_twap_check(
     router.swap(pool, buy, qty, {"from": gov})
 
     # Can't rebalance
-    with reverts("price deviates from twap too much"):
+    with reverts("cannot rebalance"):
         strategy.rebalance({"from": keeper})
 
     # Wait for twap period to pass and poke price
