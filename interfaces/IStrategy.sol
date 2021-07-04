@@ -5,5 +5,5 @@ pragma solidity 0.7.6;
 interface IStrategy {
     function rebalance() external;
 
-    function shouldRebalance() external returns (bool);
+    function shouldRebalance() external view returns (bool);
 }

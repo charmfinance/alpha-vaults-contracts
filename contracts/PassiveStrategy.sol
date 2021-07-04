@@ -123,7 +123,7 @@ contract PassiveStrategy is IStrategy {
         lastTick = tick;
     }
 
-    function shouldRebalance() public override returns (bool) {
+    function shouldRebalance() public view override returns (bool) {
         // check called by keeper
         if (msg.sender != keeper) {
             return false;
