@@ -104,7 +104,7 @@ contract PassiveStrategy is IStrategy {
     function rebalance() external override {
         require(shouldRebalance(), "cannot rebalance");
 
-        int24 tick = getTick();
+        (, int24 tick, , , , , ) = pool.slot0();
         int24 tickFloor = _floor(tick);
         int24 tickCeil = tickFloor + tickSpacing;
 
@@ -135,7 +135,7 @@ contract PassiveStrategy is IStrategy {
         }
 
         // check price has moved enough
-        int24 tick = getTick();
+        (, int24 tick, , , , , ) = pool.slot0();
         int24 tickMove = tick > lastTick ? tick - lastTick : lastTick - tick;
         if (tickMove < minTickMove) {
             return false;
@@ -150,19 +150,14 @@ contract PassiveStrategy is IStrategy {
 
         // check price not too close to boundary
         int24 maxThreshold = baseThreshold > limitThreshold ? baseThreshold : limitThreshold;
-        if (tick < TickMath.MIN_TICK + maxThreshold + tickSpacing) {
-            return false;
-        }
-        if (tick > TickMath.MAX_TICK - maxThreshold - tickSpacing) {
+        if (
+            tick < TickMath.MIN_TICK + maxThreshold + tickSpacing ||
+            tick > TickMath.MAX_TICK - maxThreshold - tickSpacing
+        ) {
             return false;
         }
 
         return true;
-    }
-
-    function getTick() public view returns (int24) {
-        (, int24 tick, , , , , ) = pool.slot0();
-        return tick;
     }
 
     /// @dev Fetches time-weighted average price in ticks from Uniswap pool.
