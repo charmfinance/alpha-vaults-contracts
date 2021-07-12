@@ -16,23 +16,22 @@ def getPrice(pool):
     amount0Desired=strategy("uint256", min_value=0, max_value=1e18),
     amount1Desired=strategy("uint256", min_value=0, max_value=1e18),
     buy=strategy("bool"),
-    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty=strategy("uint256", min_value=1e3, max_value=1e16),
 )
 @settings(max_examples=MAX_EXAMPLES)
 def test_deposit_invariants(
-    vault,
-    strategy,
-    pool,
+    createPoolVaultStrategy,
     router,
     gov,
     user,
     keeper,
-    tokens,
     amount0Desired,
     amount1Desired,
     buy,
     qty,
 ):
+    pool, vault, strategy = createPoolVaultStrategy()
+
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 
@@ -80,22 +79,21 @@ def test_deposit_invariants(
 @given(
     share_frac=strategy("uint256", min_value=1, max_value=1e8),
     buy=strategy("bool"),
-    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty=strategy("uint256", min_value=1e3, max_value=1e16),
 )
 @settings(max_examples=MAX_EXAMPLES)
 def test_withdraw_invariants(
-    vault,
-    strategy,
-    pool,
+    createPoolVaultStrategy,
     router,
     gov,
     user,
     keeper,
-    tokens,
     share_frac,
     buy,
     qty,
 ):
+    pool, vault, strategy = createPoolVaultStrategy()
+
     # Simulate deposit and random price move
     vault.deposit(1e16, 1e18, 0, 0, user, {"from": user})
     strategy.rebalance({"from": keeper})
@@ -123,26 +121,26 @@ def test_withdraw_invariants(
 
 
 @given(
-    amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
-    amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    amount0Desired=strategy("uint256", min_value=1e12, max_value=1e18),
+    amount1Desired=strategy("uint256", min_value=1e12, max_value=1e18),
     buy=strategy("bool"),
-    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty=strategy("uint256", min_value=1e3, max_value=1e8),
 )
 @settings(max_examples=MAX_EXAMPLES)
 def test_rebalance_invariants(
-    vault,
-    strategy,
-    pool,
+    MockToken,
+    createPoolVaultStrategy,
     router,
     gov,
     user,
     keeper,
-    tokens,
     amount0Desired,
     amount1Desired,
     buy,
     qty,
 ):
+    pool, vault, strategy = createPoolVaultStrategy()
+
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 
@@ -164,6 +162,7 @@ def test_rebalance_invariants(
     strategy.rebalance({"from": keeper})
 
     # Check leftover balances is low
+    tokens = MockToken.at(pool.token0()), MockToken.at(pool.token1())
     assert tokens[0].balanceOf(vault) - vault.accruedProtocolFees0() < 10000
     assert tokens[1].balanceOf(vault) - vault.accruedProtocolFees1() < 10000
 
@@ -179,23 +178,22 @@ def test_rebalance_invariants(
     amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
     amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
     buy=strategy("bool"),
-    qty=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty=strategy("uint256", min_value=1e3, max_value=1e16),
 )
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_deposit_then_withdraw(
-    vault,
-    strategy,
-    pool,
+    createPoolVaultStrategy,
     router,
     gov,
     user,
     keeper,
-    tokens,
     amount0Desired,
     amount1Desired,
     buy,
     qty,
 ):
+    pool, vault, strategy = createPoolVaultStrategy()
+
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 
@@ -226,20 +224,18 @@ def test_cannot_make_instant_profit_from_deposit_then_withdraw(
     amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
     buy=strategy("bool"),
     buy2=strategy("bool"),
-    qty=strategy("uint256", min_value=1e3, max_value=1e18),
-    qty2=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty=strategy("uint256", min_value=1e3, max_value=1e16),
+    qty2=strategy("uint256", min_value=1e3, max_value=1e16),
     manipulateBack=strategy("bool"),
 )
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_manipulated_deposit(
-    vault,
-    strategy,
-    pool,
+    MockToken,
+    createPoolVaultStrategy,
     router,
     gov,
     user,
     keeper,
-    tokens,
     amount0Desired,
     amount1Desired,
     buy,
@@ -248,6 +244,7 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     qty2,
     manipulateBack,
 ):
+    pool, vault, strategy = createPoolVaultStrategy()
 
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
@@ -258,6 +255,7 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     router.swap(pool, buy, qty, {"from": user})
 
     # Store balances and totals before
+    tokens = MockToken.at(pool.token0()), MockToken.at(pool.token1())
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
     total0, total1 = vault.getTotalAmounts()
@@ -298,20 +296,18 @@ def test_cannot_make_instant_profit_from_manipulated_deposit(
     amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
     buy=strategy("bool"),
     buy2=strategy("bool"),
-    qty=strategy("uint256", min_value=1e3, max_value=1e18),
-    qty2=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty=strategy("uint256", min_value=1e3, max_value=1e16),
+    qty2=strategy("uint256", min_value=1e3, max_value=1e16),
     manipulateBack=strategy("bool"),
 )
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_from_manipulated_withdraw(
-    vault,
-    strategy,
-    pool,
+    MockToken,
+    createPoolVaultStrategy,
     router,
     gov,
     user,
     keeper,
-    tokens,
     amount0Desired,
     amount1Desired,
     buy,
@@ -320,6 +316,8 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     qty2,
     manipulateBack,
 ):
+    pool, vault, strategy = createPoolVaultStrategy()
+
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 
@@ -329,6 +327,7 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
     router.swap(pool, buy, qty, {"from": user})
 
     # Store initial balances
+    tokens = MockToken.at(pool.token0()), MockToken.at(pool.token1())
     balance0 = tokens[0].balanceOf(user)
     balance1 = tokens[1].balanceOf(user)
     total0, total1 = vault.getTotalAmounts()
@@ -364,23 +363,20 @@ def test_cannot_make_instant_profit_from_manipulated_withdraw(
 
 
 @given(
-    amount0Desired=strategy("uint256", min_value=1e8, max_value=1e18),
-    amount1Desired=strategy("uint256", min_value=1e8, max_value=1e18),
+    amount0Desired=strategy("uint256", min_value=1e12, max_value=1e18),
+    amount1Desired=strategy("uint256", min_value=1e12, max_value=1e18),
     buy=strategy("bool"),
     buy2=strategy("bool"),
-    qty=strategy("uint256", min_value=1e3, max_value=1e18),
-    qty2=strategy("uint256", min_value=1e3, max_value=1e18),
+    qty=strategy("uint256", min_value=1e3, max_value=1e8),
+    qty2=strategy("uint256", min_value=1e3, max_value=1e8),
 )
 @settings(max_examples=MAX_EXAMPLES)
 def test_cannot_make_instant_profit_around_rebalance(
-    vault,
-    strategy,
-    pool,
+    createPoolVaultStrategy,
     router,
     gov,
     user,
     keeper,
-    tokens,
     amount0Desired,
     amount1Desired,
     buy,
@@ -388,6 +384,8 @@ def test_cannot_make_instant_profit_around_rebalance(
     buy2,
     qty2,
 ):
+    pool, vault, strategy = createPoolVaultStrategy()
+
     # Set fee to 0 since this when an arb is most likely to work
     vault.setProtocolFee(0, {"from": gov})
 

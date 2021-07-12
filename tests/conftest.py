@@ -7,32 +7,32 @@ from web3 import Web3
 UNISWAP_V3_CORE = "Uniswap/uniswap-v3-core@1.0.0"
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def gov(accounts):
     yield accounts[0]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def user(accounts):
     yield accounts[1]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def recipient(accounts):
     yield accounts[2]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def keeper(accounts):
     yield accounts[3]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def users(gov, user, recipient, keeper):
     yield [gov, user, recipient, keeper]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def router(TestRouter, gov):
     yield gov.deploy(TestRouter)
 
@@ -163,26 +163,49 @@ def vaultOnlyWithToken1(vault, strategy, pool, router, gov, keeper):
     yield vault
 
 
-@pytest.fixture
-def poolFromPrice(pm, AlphaVault, MockToken, tokens, gov):
-    def f(price):
-        UniswapV3Core = pm(UNISWAP_V3_CORE)
+# returns method to set up a pool, vault and strategy. can be used in
+# hypothesis tests where function-scoped fixtures are not allowed
+@pytest.fixture(scope="module")
+def createPoolVaultStrategy(
+    pm, AlphaVault, AlphaStrategy, MockToken, router, gov, keeper, users
+):
+    UniswapV3Core = pm(UNISWAP_V3_CORE)
+
+    def f():
+        tokenA = gov.deploy(MockToken, "name A", "symbol A", 18)
+        tokenB = gov.deploy(MockToken, "name B", "symbol B", 18)
         fee = 3000
 
+        for u in users:
+            tokenA.mint(u, 100e18, {"from": gov})
+            tokenB.mint(u, 10000e18, {"from": gov})
+            tokenA.approve(router, 100e18, {"from": u})
+            tokenB.approve(router, 10000e18, {"from": u})
+
         factory = gov.deploy(UniswapV3Core.UniswapV3Factory)
-        tx = factory.createPool(tokens[0], tokens[1], fee, {"from": gov})
+        tx = factory.createPool(tokenA, tokenB, fee, {"from": gov})
         pool = UniswapV3Core.interface.IUniswapV3Pool(tx.return_value)
-        pool.initialize(price, {"from": gov})
+
+        initialPrice = int(sqrt(100) * (1 << 96))
+        pool.initialize(initialPrice, {"from": gov})
 
         # Increase cardinality and fast forward so TWAP works
         pool.increaseObservationCardinalityNext(100, {"from": gov})
         chain.sleep(3600)
-        return pool
+
+        vault = gov.deploy(AlphaVault, pool, 10000, 100e18)
+        for u in users:
+            tokenA.approve(vault, 100e18, {"from": u})
+            tokenB.approve(vault, 10000e18, {"from": u})
+
+        strategy = gov.deploy(AlphaStrategy, vault, 2400, 1200, 200000, 600, keeper)
+        vault.setStrategy(strategy, {"from": gov})
+        return pool, vault, strategy
 
     yield f
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def getPositions(pool):
     def f(vault):
         baseKey = computePositionKey(vault, vault.baseLower(), vault.baseUpper())
