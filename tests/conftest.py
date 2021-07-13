@@ -205,7 +205,7 @@ def createPoolVaultStrategy(
     yield f
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def getPositions(pool):
     def f(vault):
         baseKey = computePositionKey(vault, vault.baseLower(), vault.baseUpper())
