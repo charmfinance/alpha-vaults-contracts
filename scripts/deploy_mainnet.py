@@ -3,7 +3,8 @@ from brownie.network.gas.strategies import GasNowScalingStrategy
 
 
 # POOL = "0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8"  # USDC / ETH / 0.3%
-POOL = "0x4e68ccd3e89f51c3074ca5072bbac773960dfa36"  # ETH / USDT / 0.3%
+# POOL = "0x4e68ccd3e89f51c3074ca5072bbac773960dfa36"  # ETH / USDT / 0.3%
+POOL = "0x99ac8ca7087fa4a2a1fb6357269965a2014abc35"  # WBTC / USDC / 0.3%
 
 PROTOCOL_FEE = 5000  # 5%
 MAX_TOTAL_SUPPLY = 2e17
