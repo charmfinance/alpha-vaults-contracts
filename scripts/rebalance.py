@@ -1,5 +1,5 @@
 from brownie import accounts, PassiveStrategy
-from brownie.network.gas.strategies import GasNowScalingStrategy
+from brownie.network.gas.strategies import ExponentialScalingStrategy
 import os
 
 
@@ -26,7 +26,7 @@ def main():
     # keeper = accounts.load(input("Brownie account: "))
     balance = keeper.balance()
 
-    gas_strategy = GasNowScalingStrategy()
+    gas_strategy = ExponentialScalingStrategy("50 gwei", "1000 gwei")
 
     for address in STRATEGIES:
         print(f"Running for strategy: {address}")
